@@ -12,7 +12,7 @@ import serial
 import threading
 import datetime
 
-TOOL_PORT   = "COM10"   # virtual port — miniClima Tool connects here
+TOOL_PORT   = "COM4"   # virtual port — miniClima Tool connects here
 DEVICE_PORT = "COM3"    # real EBC10 device
 BAUD        = 9600      # change to 19200 or 38400 if CSV looks garbled
 
@@ -44,8 +44,8 @@ print(f"Relay running: {TOOL_PORT} <-> {DEVICE_PORT}")
 print(f"Connect miniClima Tool to {TOOL_PORT}")
 print("Press Ctrl+C to stop and save capture.\n")
 
-t1 = threading.Thread(target=relay, args=(tool_side,   device_side, "TOOL→EBC"), daemon=True)
-t2 = threading.Thread(target=relay, args=(device_side, tool_side,   "EBC→TOOL"), daemon=True)
+t1 = threading.Thread(target=relay, args=(tool_side,   device_side, "TOOL -> EBC"), daemon=True)
+t2 = threading.Thread(target=relay, args=(device_side, tool_side,   "EBC -> TOOL"), daemon=True)
 t1.start()
 t2.start()
 
