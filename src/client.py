@@ -1,340 +1,360 @@
 #!/usr/bin/env python3
 """
-miniClima EBC10 — RS232 Python Client (DRAFT)
-
-STATUS: Placeholder implementation.
-Protocol fields marked TODO must be filled in after sniffing session.
-See docs/SNIFFING_PLAN.md and captures/ directory.
+miniClima EBC10 — RS232 ASCII client
 
 Usage:
-    python src/client.py --port /dev/ttyUSB0 --baud 9600
+    python src/client.py --port /dev/ttyUSB0 status
+    python src/client.py --port /dev/ttyUSB0 vals
+    python src/client.py --port /dev/ttyUSB0 set-sp 55
+    python src/client.py --port /dev/ttyUSB0 start
+    python src/client.py --port /dev/ttyUSB0 stop
+    python src/client.py --port /dev/ttyUSB0 set-log-time 15
+    python src/client.py --port /dev/ttyUSB0 dump
 """
 
-import serial
-import threading
 import argparse
 import logging
-import csv
-from datetime import datetime
-from dataclasses import dataclass
 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+import serial
+
 log = logging.getLogger("ebc10")
 
-# ---------------------------------------------------------------------------
-# Serial config
-# ---------------------------------------------------------------------------
-
-@dataclass
-class SerialConfig:
-    port: str = "/dev/ttyUSB0"
-    baud: int = 9600          # TODO: confirm from sniffing
-    bytesize: int = 8
-    parity: str = "N"
-    stopbits: int = 1
-    timeout: float = 1.0
-
 
 # ---------------------------------------------------------------------------
-# Protocol constants  (ALL TODO — fill in after sniffing)
+# Encoding helpers
 # ---------------------------------------------------------------------------
 
-FRAME_START  = 0x02   # TODO: confirm STX byte
-FRAME_END    = 0x03   # TODO: confirm ETX byte
-
-class Cmd:
-    HANDSHAKE      = 0x00  # TODO
-    SET_SETPOINT   = 0x00  # TODO
-    SET_HYSTERESIS = 0x00  # TODO
-    SET_ALARM_MIN  = 0x00  # TODO
-    SET_ALARM_MAX  = 0x00  # TODO
-    SET_LOG_RATE   = 0x00  # TODO
-    START_UNIT     = 0x00  # TODO  (firmware >= 111215 only)
-    STOP_UNIT      = 0x00  # TODO
-    SYNC_TIME      = 0x00  # TODO
-    READ_HISTORY   = 0x00  # TODO
-
-
-# ---------------------------------------------------------------------------
-# Frame builder / parser
-# ---------------------------------------------------------------------------
-
-def calc_checksum(data: bytes) -> int:
-    """TODO: replace with actual checksum algorithm (XOR / sum / CRC)."""
-    return sum(data) & 0xFF  # placeholder: sum mod 256
-
-def build_frame(cmd_id: int, payload: bytes = b"") -> bytes:
+def encode_nibbles(value: str) -> bytes:
     """
-    Builds a command frame.
-    Assumed structure: [STX][CMD][LEN][PAYLOAD...][CHK][ETX]
-    TODO: verify structure and checksum from sniffed captures.
-    """
-    body = bytes([cmd_id, len(payload)]) + payload
-    chk  = calc_checksum(body)
-    return bytes([FRAME_START]) + body + bytes([chk, FRAME_END])
+    Encode a string of digits (and '.' / ':') for EBC write payload.
+    Each decimal digit → its raw value (0x01 for '1', not ASCII 0x31).
+    Separator chars '.' and ':' are sent as-is (0x2E, 0x3A).
+    Terminated with CR (0x0D).
 
-def parse_response(raw: bytes) -> dict | None:
+    Examples:
+        "15"       → b'\\x01\\x05\\x0d'
+        "26.03.26" → b'\\x02\\x06\\x2e\\x00\\x03\\x2e\\x02\\x06\\x0d'
+        "14:54"    → b'\\x01\\x04\\x3a\\x05\\x04\\x0d'
     """
-    Parse a binary response frame from the EBC.
-    TODO: fill in real structure after sniffing.
-    """
-    if len(raw) < 4:
-        return None
-    if raw[0] != FRAME_START or raw[-1] != FRAME_END:
-        log.warning(f"Unexpected frame boundaries: {raw.hex()}")
-        return None
-    cmd_id  = raw[1]
-    length  = raw[2]
-    payload = raw[3:3+length]
-    chk     = raw[3+length]
-    expected_chk = calc_checksum(raw[1:3+length])
-    if chk != expected_chk:
-        log.warning(f"Checksum mismatch: got {chk:#04x}, expected {expected_chk:#04x}")
-    return {"cmd_id": cmd_id, "payload": payload, "checksum_ok": chk == expected_chk}
+    out = bytearray()
+    for ch in value:
+        if ch.isdigit():
+            out.append(int(ch))
+        else:
+            out.append(ord(ch))
+    out.append(0x0D)
+    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
-# Pushed CSV parser (no protocol knowledge needed — device sends automatically)
-# ---------------------------------------------------------------------------
-
-def parse_pushed_line(line: str) -> dict | None:
-    """
-    Parse a semicolon-delimited measurement line pushed by the EBC:
-      date;time;T/°C;RH/%;set/%;alarmMin/%;alarmMax/%;timeDiff_seconds
-    """
-    parts = line.strip().split(";")
-    if len(parts) < 7:
-        return None
-    try:
-        return {
-            "date":          parts[0],
-            "time":          parts[1],
-            "temperature_c": float(parts[2]),
-            "rh_percent":    float(parts[3]),
-            "setpoint_pct":  float(parts[4]),
-            "alarm_min_pct": float(parts[5]),
-            "alarm_max_pct": float(parts[6]),
-            "time_diff_s":   int(parts[7]) if len(parts) > 7 else None,
-            "received_at":   datetime.now().isoformat(),
-        }
-    except (ValueError, IndexError) as e:
-        log.debug(f"Could not parse line: {line!r} — {e}")
-        return None
-
-
-# ---------------------------------------------------------------------------
-# EBC10 Client
+# EBC10 client
 # ---------------------------------------------------------------------------
 
 class Ebc10Client:
-    def __init__(self, cfg: SerialConfig):
-        self.cfg = cfg
-        self.ser = serial.Serial(
-            port=cfg.port,
-            baudrate=cfg.baud,
-            bytesize=cfg.bytesize,
-            parity=cfg.parity,
-            stopbits=cfg.stopbits,
-            timeout=cfg.timeout,
+    READ_TIMEOUT = 2.0
+
+    def __init__(self, port: str, baud: int = 9600):
+        self._ser = serial.Serial(
+            port=port,
+            baudrate=baud,
+            bytesize=8,
+            parity="N",
+            stopbits=1,
+            timeout=self.READ_TIMEOUT,
         )
-        self._running = False
-        self._listener_thread: threading.Thread | None = None
-        self._csv_writer = None
-        self._csv_file = None
 
-    # --- connection --------------------------------------------------------
+    def __enter__(self):
+        return self
 
-    def connect(self):
-        if not self.ser.is_open:
-            self.ser.open()
-        log.info(f"Connected to {self.cfg.port} @ {self.cfg.baud} baud")
-        self._start_listener()
-        self._handshake()
+    def __exit__(self, *_):
+        self.close()
 
-    def disconnect(self):
-        self._running = False
-        if self._listener_thread:
-            self._listener_thread.join(timeout=2)
-        if self.ser.is_open:
-            self.ser.close()
-        if self._csv_file:
-            self._csv_file.close()
-        log.info("Disconnected")
+    def close(self):
+        if self._ser.is_open:
+            self._ser.close()
 
-    # --- background listener -----------------------------------------------
+    # --- low-level I/O -------------------------------------------------------
 
-    def _start_listener(self):
-        self._running = True
-        self._listener_thread = threading.Thread(
-            target=self._listen_loop, daemon=True
-        )
-        self._listener_thread.start()
+    def _flush_input(self):
+        self._ser.reset_input_buffer()
 
-    def _listen_loop(self):
-        """Reads incoming data continuously; routes CSV lines vs binary frames."""
-        buffer = ""
-        while self._running:
-            try:
-                raw = self.ser.read(self.ser.in_waiting or 1)
-                if not raw:
-                    continue
-                text = raw.decode("ascii", errors="replace")
-                buffer += text
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
-                    if ";" in line:
-                        data = parse_pushed_line(line)
-                        if data:
-                            log.info(f"PUSHED: {data}")
-                            self._write_csv(data)
-                    else:
-                        log.debug(f"RAW: {line!r}")
-            except Exception as e:
-                log.error(f"Listener error: {e}")
+    def _readline(self) -> str:
+        return self._ser.readline().decode("ascii", errors="replace").strip()
+
+    def _send(self, data: bytes):
+        self._ser.write(data)
+        self._ser.flush()
+
+    def _cmd(self, cmd: str) -> str:
+        """Send a read command; return first non-echo, non-empty response line."""
+        self._flush_input()
+        self._send((cmd + "\r").encode("ascii"))
+        for _ in range(4):
+            line = self._readline()
+            if not line:
+                continue
+            if line.rstrip("\r") == cmd:
+                continue  # skip echo
+            return line
+        return ""
+
+    def _write_cmd(self, cmd: str, value: str) -> bool:
+        """
+        Send a write command: cmd\r → wait for '?' prompt → send nibble-encoded value.
+        Returns True on '!' (success).
+        """
+        self._flush_input()
+        self._send((cmd + "\r").encode("ascii"))
+        for _ in range(4):
+            line = self._readline()
+            if line == "?":
                 break
+        else:
+            log.warning(f"write_cmd({cmd!r}): no '?' prompt received")
+            return False
+        self._send(encode_nibbles(value))
+        resp = self._readline()
+        if resp != "!":
+            log.warning(f"write_cmd({cmd!r}, {value!r}): unexpected response {resp!r}")
+            return False
+        return True
 
-    # --- CSV logging -------------------------------------------------------
+    # --- read commands -------------------------------------------------------
 
-    def start_csv_log(self, path: str = "ebc10_log.csv"):
-        self._csv_file = open(path, "a", newline="")
-        fieldnames = [
-            "received_at", "date", "time", "temperature_c",
-            "rh_percent", "setpoint_pct", "alarm_min_pct",
-            "alarm_max_pct", "time_diff_s",
-        ]
-        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=fieldnames)
-        if self._csv_file.tell() == 0:
-            self._csv_writer.writeheader()
+    def read_sernum(self) -> dict:
+        """
+        Returns dict: serial, model, firmware, sp, lo, hi, hy, lt, to, xx
+        Raw format: #004537 M 170908.04 Set:55 40 70 02 15 -05 04
+        """
+        raw = self._cmd("sernum")
+        result: dict = {"raw": raw}
+        try:
+            parts = raw.split()
+            result["serial"]   = parts[0]   # #004537
+            result["model"]    = parts[1]   # M
+            result["firmware"] = parts[2]   # 170908.04
+            if "Set:" in raw:
+                sp_str = raw.split("Set:")[1]
+                sp_parts = sp_str.split()
+                if len(sp_parts) >= 6:
+                    result["sp"] = int(sp_parts[0])
+                    result["lo"] = int(sp_parts[1])
+                    result["hi"] = int(sp_parts[2])
+                    result["hy"] = int(sp_parts[3])
+                    result["lt"] = int(sp_parts[4])
+                    result["to"] = int(sp_parts[5])
+                if len(sp_parts) >= 7:
+                    result["xx"] = sp_parts[6]
+        except (IndexError, ValueError) as e:
+            log.debug(f"sernum parse error: {e}  raw={raw!r}")
+        return result
 
-    def _write_csv(self, data: dict):
-        if self._csv_writer:
-            self._csv_writer.writerow(data)
-            self._csv_file.flush()
+    def read_vals(self) -> dict:
+        """
+        Returns dict: state, rh, t1, t2, flag (or just state='standby').
+        Raw format: "Running  67  27  +06  +36  00  p"
+                 or "Stand by ..."
+        """
+        raw = self._cmd("vals")
+        result: dict = {"raw": raw, "state": "unknown"}
+        try:
+            parts = raw.split()
+            if raw.startswith("Stand"):
+                result["state"] = "standby"
+                offset = 2  # "Stand by" occupies two tokens
+            elif raw.startswith("Running"):
+                result["state"] = "running"
+                offset = 1
+            else:
+                offset = None
+            if offset is not None and len(parts) > offset + 3:
+                result["rh"]      = int(parts[offset])
+                result["unknown"] = int(parts[offset + 1])
+                result["t1"]      = int(parts[offset + 2].lstrip("+"))
+                result["t2"]      = int(parts[offset + 3].lstrip("+"))
+                result["flag"]    = parts[offset + 5] if len(parts) > offset + 5 else ""
+        except (IndexError, ValueError) as e:
+            log.debug(f"vals parse error: {e}  raw={raw!r}")
+        return result
 
-    # --- commands ----------------------------------------------------------
+    def read_date(self) -> str:
+        return self._cmd("date")
 
-    def _send(self, frame: bytes) -> bytes:
-        log.debug(f"TX: {frame.hex()}")
-        self.ser.write(frame)
-        self.ser.flush()
-        resp = self.ser.read(64)  # TODO: adjust expected response length
-        log.debug(f"RX: {resp.hex()}")
-        return resp
+    def read_time(self) -> str:
+        return self._cmd("time")
 
-    def _handshake(self):
-        """Initial connection handshake. TODO: fill in real frame."""
-        frame = build_frame(Cmd.HANDSHAKE)
-        resp  = self._send(frame)
-        parsed = parse_response(resp)
-        log.info(f"Handshake response: {parsed}")
+    def read_setlog_time(self) -> int | None:
+        raw = self._cmd("setLogTime")
+        try:
+            return int(raw)
+        except ValueError:
+            return None
 
-    def set_setpoint(self, rh_percent: int):
-        """Set target relative humidity (15–85%). TODO: confirm encoding."""
-        if not 15 <= rh_percent <= 85:
-            raise ValueError(f"Setpoint must be 15–85%, got {rh_percent}")
-        frame = build_frame(Cmd.SET_SETPOINT, bytes([rh_percent]))
-        resp  = self._send(frame)
-        log.info(f"set_setpoint({rh_percent}%) → {parse_response(resp)}")
+    def read_ophours(self) -> int | None:
+        raw = self._cmd("ophours")
+        try:
+            return int(raw)
+        except ValueError:
+            return None
 
-    def set_alarm_min(self, rh_percent: int):
-        """Set low alarm threshold. TODO: confirm encoding."""
-        frame = build_frame(Cmd.SET_ALARM_MIN, bytes([rh_percent]))
-        resp  = self._send(frame)
-        log.info(f"set_alarm_min({rh_percent}%) → {parse_response(resp)}")
+    def keepalive(self):
+        self._send(b"\r")
 
-    def set_alarm_max(self, rh_percent: int):
-        """Set high alarm threshold. TODO: confirm encoding."""
-        frame = build_frame(Cmd.SET_ALARM_MAX, bytes([rh_percent]))
-        resp  = self._send(frame)
-        log.info(f"set_alarm_max({rh_percent}%) → {parse_response(resp)}")
+    # --- write commands ------------------------------------------------------
 
-    def set_hysteresis(self, value: int):
-        """Set hysteresis (1–4). TODO: confirm encoding."""
-        if not 1 <= value <= 4:
-            raise ValueError(f"Hysteresis must be 1–4, got {value}")
-        frame = build_frame(Cmd.SET_HYSTERESIS, bytes([value]))
-        resp  = self._send(frame)
-        log.info(f"set_hysteresis({value}) → {parse_response(resp)}")
-
-    def set_log_rate(self, minutes: int):
-        """Set datalogger interval in minutes (1–99). TODO: confirm encoding."""
+    def set_log_time(self, minutes: int) -> bool:
+        """Set log interval (1–99 min)."""
         if not 1 <= minutes <= 99:
-            raise ValueError(f"Log rate must be 1–99 min, got {minutes}")
-        frame = build_frame(Cmd.SET_LOG_RATE, bytes([minutes]))
-        resp  = self._send(frame)
-        log.info(f"set_log_rate({minutes} min) → {parse_response(resp)}")
+            raise ValueError(f"minutes must be 1–99, got {minutes}")
+        return self._write_cmd("setLogTime", str(minutes).zfill(2))
 
-    def start_unit(self):
-        """Start the EBC unit. Requires firmware >= 111215. TODO: confirm."""
-        frame = build_frame(Cmd.START_UNIT)
-        resp  = self._send(frame)
-        log.info(f"start_unit() → {parse_response(resp)}")
+    def set_date(self, date_str: str) -> bool:
+        """Set date. date_str format: 'DD.MM.YY' e.g. '26.03.26'"""
+        return self._write_cmd("date", date_str)
 
-    def stop_unit(self):
-        """Stop the EBC unit. Requires firmware >= 111215. TODO: confirm."""
-        frame = build_frame(Cmd.STOP_UNIT)
-        resp  = self._send(frame)
-        log.info(f"stop_unit() → {parse_response(resp)}")
+    def set_time(self, time_str: str) -> bool:
+        """Set time. time_str format: 'HH:MM' e.g. '14:54'"""
+        return self._write_cmd("time", time_str)
 
-    def sync_time(self):
-        """Sync device clock to current PC time. TODO: confirm date encoding."""
-        now = datetime.now()
-        # Placeholder: send year/month/day/hour/min/sec as individual bytes
-        payload = bytes([
-            now.year % 100,  # 2-digit year — TODO: confirm format
-            now.month,
-            now.day,
-            now.hour,
-            now.minute,
-            now.second,
-        ])
-        frame = build_frame(Cmd.SYNC_TIME, payload)
-        resp  = self._send(frame)
-        log.info(f"sync_time({now}) → {parse_response(resp)}")
+    def set_setpoint(self, rh_percent: int) -> bool:
+        """
+        Set humidity setpoint via #setPoint command (confirmed write, no 's').
+        Payload after '?' prompt: \\x00\\x00 + nibble-encoded tens + units + CR
+        E.g. SP=57 → b'\\x00\\x00\\x05\\x07\\x0d'
+        """
+        if not 0 <= rh_percent <= 99:
+            raise ValueError(f"setpoint must be 0–99%, got {rh_percent}")
+        tens  = rh_percent // 10
+        units = rh_percent % 10
+        payload = bytes([0x00, 0x00, tens, units, 0x0D])
+        self._flush_input()
+        self._send(b"#setPoint\r")
+        for _ in range(4):
+            line = self._readline()
+            if line == "?":
+                break
+        else:
+            log.warning("set_setpoint: no '?' prompt received")
+            return False
+        self._send(payload)
+        resp = self._readline()
+        if resp != "!":
+            log.warning(f"set_setpoint({rh_percent}): unexpected response {resp!r}")
+            return False
+        return True
 
-    def read_history(self):
-        """Request full history log from device (up to 15,000 entries). TODO."""
-        frame = build_frame(Cmd.READ_HISTORY)
-        # History response is likely large — read until ETX or timeout
-        self.ser.write(frame)
-        self.ser.flush()
-        result = bytearray()
+    def start(self) -> bool:
+        self._send(b"start\r")
+        resp = self._readline()
+        return resp == "!"
+
+    def stop(self) -> bool:
+        self._send(b"stop\r")
+        resp = self._readline()
+        return resp == "!"
+
+    def dump(self) -> str:
+        """
+        Retrieve full history log.
+        Returns raw ASCII hex string (each byte = 2 hex chars, no spaces).
+        """
+        self._flush_input()
+        self._send(b"dump\r")
+        for _ in range(4):
+            line = self._readline()
+            if "really" in line.lower():
+                break
+        self._send(b"yes\r")
+        data = bytearray()
         while True:
-            chunk = self.ser.read(256)
+            chunk = self._ser.read(256)
             if not chunk:
                 break
-            result += chunk
-            if FRAME_END in chunk:
+            data += chunk
+            if b"!" in chunk:
                 break
-        log.info(f"read_history(): received {len(result)} bytes")
-        return bytes(result)  # TODO: parse into list of measurement dicts
+        return data.decode("ascii", errors="replace").rstrip("!\r\n")
 
 
 # ---------------------------------------------------------------------------
-# CLI entry point
+# CLI
 # ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="miniClima EBC10 RS232 client")
-    parser.add_argument("--port",   default="/dev/ttyUSB0")
-    parser.add_argument("--baud",   default=9600, type=int)
-    parser.add_argument("--log",    default="ebc10_log.csv")
+    parser.add_argument("--port", default="/dev/ttyUSB0")
+    parser.add_argument("--baud", default=9600, type=int)
+    parser.add_argument("-v", "--verbose", action="store_true")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("status",       help="Read sernum + vals")
+    sub.add_parser("vals",         help="Read current sensor values")
+    sub.add_parser("sernum",       help="Read serial/firmware/settings")
+    sub.add_parser("date",         help="Read device date")
+    sub.add_parser("time",         help="Read device time")
+    sub.add_parser("ophours",      help="Read operating hours")
+    sub.add_parser("dump",         help="Dump full history log (ASCII hex)")
+
+    p = sub.add_parser("set-sp",       help="Set humidity setpoint (%%)")
+    p.add_argument("value", type=int)
+
+    p = sub.add_parser("set-log-time", help="Set log interval (min)")
+    p.add_argument("value", type=int)
+
+    p = sub.add_parser("set-date",     help="Set date (DD.MM.YY)")
+    p.add_argument("value")
+
+    p = sub.add_parser("set-time",     help="Set time (HH:MM)")
+    p.add_argument("value")
+
+    sub.add_parser("start",        help="Start the unit")
+    sub.add_parser("stop",         help="Stop the unit")
+
     args = parser.parse_args()
 
-    cfg    = SerialConfig(port=args.port, baud=args.baud)
-    client = Ebc10Client(cfg)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.WARNING,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
 
-    try:
-        client.connect()
-        client.start_csv_log(args.log)
-        print("Listening for pushed data. Press Ctrl+C to stop.")
-        while True:
-            pass
-    except KeyboardInterrupt:
-        print("\nStopping.")
-    finally:
-        client.disconnect()
+    with Ebc10Client(args.port, args.baud) as c:
+        if args.cmd == "status":
+            s = c.read_sernum()
+            v = c.read_vals()
+            print(f"Serial:   {s.get('serial', '?')}  FW: {s.get('firmware', '?')}")
+            print(f"Settings: SP={s.get('sp', '?')}%  LO={s.get('lo', '?')}%  "
+                  f"HI={s.get('hi', '?')}%  HY={s.get('hy', '?')}  "
+                  f"LT={s.get('lt', '?')}min  TO={s.get('to', '?')}")
+            print(f"State:    {v.get('state', '?')}")
+            if "rh" in v:
+                print(f"Sensor:   RH={v.get('rh', '?')}%  "
+                      f"T1={v.get('t1', '?')}°C  T2={v.get('t2', '?')}°C  "
+                      f"flag={v.get('flag') or 'none'}")
+        elif args.cmd == "vals":
+            print(c.read_vals())
+        elif args.cmd == "sernum":
+            print(c.read_sernum())
+        elif args.cmd == "date":
+            print(c.read_date())
+        elif args.cmd == "time":
+            print(c.read_time())
+        elif args.cmd == "ophours":
+            print(f"{c.read_ophours()} hours")
+        elif args.cmd == "dump":
+            print(c.dump())
+        elif args.cmd == "set-sp":
+            print("OK" if c.set_setpoint(args.value) else "FAIL")
+        elif args.cmd == "set-log-time":
+            print("OK" if c.set_log_time(args.value) else "FAIL")
+        elif args.cmd == "set-date":
+            print("OK" if c.set_date(args.value) else "FAIL")
+        elif args.cmd == "set-time":
+            print("OK" if c.set_time(args.value) else "FAIL")
+        elif args.cmd == "start":
+            print("OK" if c.start() else "FAIL")
+        elif args.cmd == "stop":
+            print("OK" if c.stop() else "FAIL")
+
 
 if __name__ == "__main__":
     main()
