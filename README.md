@@ -32,9 +32,16 @@ EBC10 "PC" RS232 port
 ## Installation
 
 ```bash
+# Build dependencies (Debian/Ubuntu/Raspberry Pi OS)
+sudo apt update
+sudo apt install -y build-essential python3-dev
+
 git clone https://github.com/youruser/miniclima-rs232.git
 cd miniclima-rs232
 uv sync
+
+# Optional: install just task runner
+sudo apt install just   # Debian/Ubuntu/Raspberry Pi OS
 ```
 
 ## Usage
