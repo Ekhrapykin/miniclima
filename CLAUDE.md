@@ -20,7 +20,7 @@ uv run --package miniclima-api uvicorn api.main:app --reload --host 0.0.0.0 --po
 # Passive logger (streams pushed data to CSV)
 uv run python tools/logger.py --port /dev/ttyACM0
 
-# Task runner (just must be installed: brew install just)
+# Task runner (just must be installed: brew install just / sudo apt install just)
 just                  # list all recipes
 just sync             # uv sync
 just api              # start API server
@@ -28,6 +28,10 @@ just cli <args>       # CLI passthrough — e.g. just cli set-sp 55
 just push             # rsync to bill + uv sync there
 just frontend-dev     # Next.js dev server (port 3000)
 just frontend-build   # production build
+
+# Docker (API only)
+docker build -t miniclima-api .
+docker run -d --device=/dev/ttyACM0:/dev/ttyACM0 -p 8000:8000 miniclima-api
 ```
 
 ---
@@ -151,6 +155,9 @@ tools/relay.py             — Windows-only COM-port relay for protocol sniffing
 frontend/                  — Next.js 16 app (npm run dev / build / lint)
   NOTE: Next.js 16 has breaking changes vs earlier versions.
   Read node_modules/next/dist/docs/ before writing frontend code.
+
+Dockerfile                 — API-only image; copies packages/ebc10 + apps/api, excludes frontend/cli/tools
+.dockerignore              — excludes frontend/, apps/cli/, tools/, .venv/, node_modules/
 ```
 
 ## How to Help Me (Claude Instructions)
