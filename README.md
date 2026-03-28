@@ -36,8 +36,8 @@ EBC10 "PC" RS232 port
 sudo apt update
 sudo apt install -y build-essential python3-dev
 
-git clone https://github.com/youruser/miniclima-rs232.git
-cd miniclima-rs232
+git clone https://github.com/ekhrapykin/miniclima.git
+cd miniclima
 uv sync
 
 # Optional: install just task runner

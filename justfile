@@ -3,7 +3,9 @@
 
 set dotenv-load
 
-port := env_var_or_default("EBC10_PORT", "/dev/ttyACM0")
+port          := env_var_or_default("EBC10_PORT", "/dev/ttyACM0")
+api_port      := env_var_or_default("API_PORT", "8000")
+frontend_port := env_var_or_default("FRONTEND_PORT", "3000")
 
 # List available recipes
 default:
@@ -13,9 +15,9 @@ default:
 sync:
     uv sync
 
-# Run the FastAPI dev server (hot-reload, 0.0.0.0:8000)
+# Run the FastAPI dev server (hot-reload)
 api:
-    uv run --no-sync --package miniclima-api uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+    uv run --no-sync --package miniclima-api uvicorn api.main:app --reload --host 0.0.0.0 --port {{api_port}}
 
 # Run the EBC10 CLI — e.g. just cli status, just cli set-sp 55
 cli *args:
@@ -33,9 +35,9 @@ logger output="ebc10_log.csv":
 relay:
     uv run --no-sync python tools/relay.py
 
-# Frontend dev server (Next.js, port 3000)
+# Frontend dev server (Next.js)
 frontend-dev:
-    cd frontend && npm run dev
+    cd frontend && npm run dev -- --port {{frontend_port}}
 
 # Build frontend for production
 frontend-build:

@@ -5,13 +5,15 @@ Run:
     uvicorn api.main:app --reload
 
 Config via env vars:
-    EBC10_PORT  (default: /dev/ttyACM0)
-    EBC10_BAUD  (default: 9600)
+    EBC10_PORT     (default: /dev/ttyACM0)
+    EBC10_BAUD     (default: 9600)
+    CORS_ORIGINS   (default: *, comma-separated list of allowed origins)
 """
 
 import os
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ebc10 import Client
@@ -20,6 +22,13 @@ PORT = os.getenv("EBC10_PORT", "/dev/ttyACM0")
 BAUD = int(os.getenv("EBC10_BAUD", "9600"))
 
 app = FastAPI(title="miniClima EBC10 API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 def _client() -> Client:
