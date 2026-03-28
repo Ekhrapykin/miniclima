@@ -132,6 +132,7 @@ TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex str
 │   └── miniclima (1).md    # Full prior research conversation
 ├── src/
 │   ├── ebc10.py            # Ebc10Client class — protocol implementation
+│   ├── cmd_enum.py         # Cmd(str, Enum) — CLI command names
 │   ├── client.py           # CLI entry point (Cmd enum, match/case)
 │   ├── logger.py           # Passive CSV listener
 │   └── relay.py            # COM port relay for sniffing (Windows, com0com)
@@ -147,6 +148,8 @@ TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex str
 - `start\r` and `stop\r` respond with a command echo, NOT `!\r\n` — check for echo string, not `!`.
 - History dump: `dump\r` → EBC says `really?\r\n` → send `yes\r` → receive ASCII hex stream ending with `!\r\n`. Each byte encoded as 2 hex chars.
 - `#setPoints+NNN`: Tool sends `+000` as the poll query each cycle, then optionally `+NNN` (NNN = 3-digit decimal SP target) as a write attempt. Whether this actually sets SP needs live confirmation — mark with `# TODO: confirm`. The confirmed SP write is `#setPoint` (no 's') with `\x00\x00` prefix and nibble encoding.
+- `_write_cmd()` accepts `raw_payload: bytes` for binary payloads (e.g. `#setPoint` with `\x00\x00` prefix). Use `raw_payload=` instead of `value=` to skip nibble encoding.
+- `dump()` reads the response with `ser.read(256)` in a loop (not readline) — the hex stream is not line-delimited.
 - Flag unconfirmed behaviour with `# TODO: confirm` comments.
 - Target: Python 3.10+, pyserial, Raspberry Pi (`/dev/ttyACM0` with QinHeng CH34x adapter).
 - Keep it simple — this is a single-device integration, not a general library.
