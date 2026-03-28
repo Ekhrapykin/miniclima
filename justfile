@@ -33,6 +33,18 @@ logger output="ebc10_log.csv":
 relay:
     uv run --no-sync python tools/relay.py
 
+# Frontend dev server (Next.js, port 3000)
+frontend-dev:
+    cd frontend && npm run dev
+
+# Build frontend for production
+frontend-build:
+    cd frontend && npm run build
+
+# Lint frontend
+frontend-lint:
+    cd frontend && npm run lint
+
 # rsync project to bill (excludes .venv, __pycache__, uv.lock)
 deploy:
     rsync -av --exclude .venv --exclude __pycache__ --exclude '*.pyc' --exclude uv.lock \

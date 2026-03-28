@@ -21,11 +21,13 @@ uv run --package miniclima-api uvicorn api.main:app --reload --host 0.0.0.0 --po
 uv run python tools/logger.py --port /dev/ttyACM0
 
 # Task runner (just must be installed: brew install just)
-just          # list all recipes
-just sync     # uv sync
-just api      # start API server
-just cli <args>  # CLI passthrough — e.g. just cli set-sp 55
-just push     # rsync to bill + uv sync there
+just                  # list all recipes
+just sync             # uv sync
+just api              # start API server
+just cli <args>       # CLI passthrough — e.g. just cli set-sp 55
+just push             # rsync to bill + uv sync there
+just frontend-dev     # Next.js dev server (port 3000)
+just frontend-build   # production build
 ```
 
 ---
@@ -145,6 +147,10 @@ apps/cli/src/cli/main.py   — argparse entry point; uses Client as context mana
 apps/api/src/api/main.py   — FastAPI; PORT/BAUD from EBC10_PORT/EBC10_BAUD env; each handler opens fresh Client
 tools/logger.py            — passive listener, logs autonomous EBC pushes to CSV (no protocol knowledge needed)
 tools/relay.py             — Windows-only COM-port relay for protocol sniffing; hardcoded TOOL_PORT/DEVICE_PORT
+
+frontend/                  — Next.js 16 app (npm run dev / build / lint)
+  NOTE: Next.js 16 has breaking changes vs earlier versions.
+  Read node_modules/next/dist/docs/ before writing frontend code.
 ```
 
 ## How to Help Me (Claude Instructions)
