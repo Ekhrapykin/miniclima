@@ -1,3 +1,35 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+# Install / sync all workspace packages
+uv sync
+
+# CLI — read device status
+uv run ebc10 --port /dev/ttyACM0 status
+
+# CLI — all subcommands: vals sernum date time ophours dump start stop set-sp set-log-time set-date set-time
+uv run ebc10 --port /dev/ttyACM0 <cmd> [value]
+
+# API server (hot-reload, port 8000)
+uv run --package miniclima-api uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Passive logger (streams pushed data to CSV)
+uv run python tools/logger.py --port /dev/ttyACM0
+
+# Task runner (just must be installed: brew install just)
+just          # list all recipes
+just sync     # uv sync
+just api      # start API server
+just cli <args>  # CLI passthrough — e.g. just cli set-sp 55
+just push     # rsync to bill + uv sync there
+```
+
+---
+
 # miniClima EBC10 — RS232 Integration Project
 
 ## Project Goal
@@ -99,38 +131,20 @@ TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex str
 - Settings change: `26.03.26 09:45 Set:57 39 69 02 15 -05 04\r\n` (after `#setPoint` write)
 - Error: `26.03.26 14:55 Signal Error\r\n`
 
-## Current Status
-- [x] 5 sniffing sessions completed (session 5 had sensor + multiple write attempts)
-- [x] Serial parameters confirmed (9600, 8N1)
-- [x] Protocol identified as plain ASCII terminal
-- [x] All READ commands decoded: sernum, date, time, setLogTime, vals, ophours, keepalive
-- [x] setLogTime, date, time writes confirmed with nibble encoding
-- [x] `#setPoint` write decoded (SP only, `\x00\x00` prefix unknown)
-- [x] `start\r` and `stop\r` TX commands confirmed
-- [x] `vals` response decoded (Running/Stand by + sensor readings)
-- [x] `ophours` command discovered
-- [x] `dump\r` → `yes\r` history dump command confirmed; data is ASCII hex text
-- [x] `protocol.py` deleted (redundant binary placeholder); `ebc10.py` created with full ASCII client
-- [x] `client.py` rewritten as CLI entry point (subcommands, match/case, Cmd enum)
-- [x] `requirements.txt` replaced by `pyproject.toml` (uv)
-- [x] `start` / `stop` confirmed live: EBC echoes command back (`start\r\n`, `stop\r\n`) — no `!` response
-- [x] `vals` in standby confirmed: sensor readings present after "Stand by" prefix (same field offsets, offset=2)
-- [x] Live test on Raspberry Pi via `/dev/ttyACM0` (QinHeng CH34x adapter) — all read commands + start/stop verified
-- [ ] AlarmMin / AlarmMax / Hysteresis write commands not yet captured (session 5 too noisy)
-- [ ] Temperature offset write not yet captured
-- [ ] History dump record format fully decoded
-- [ ] `#setPoints+NNN` write-form effect — confirmed via captures but not tested live
-
 ## Repository Structure
+
+uv workspace — three members (`packages/ebc10`, `apps/cli`, `apps/api`).
+
 ```
-~/Projects/claude/miniclima
-├── pyproject.toml              # uv workspace root
-├── packages/ebc10/             # library: Client, encode_nibbles, Cmd
-├── apps/cli/                   # CLI app — entry point: `ebc10 <cmd>`
-├── apps/api/                   # FastAPI app — REST wrapper over Client
-├── tools/                      # standalone scripts: logger.py, relay.py
-├── docs/
-└── captures/
+packages/ebc10/src/ebc10/
+  client.py     — Client class: _cmd / _write_cmd / _echo_cmd low-level I/O; all read/write methods
+  cmd_enum.py   — Cmd(str, Enum) subcommand names; __str__ = str.__str__ fixes Python 3.11 argparse regression
+  __init__.py   — re-exports Client, encode_nibbles, Cmd
+
+apps/cli/src/cli/main.py   — argparse entry point; uses Client as context manager
+apps/api/src/api/main.py   — FastAPI; PORT/BAUD from EBC10_PORT/EBC10_BAUD env; each handler opens fresh Client
+tools/logger.py            — passive listener, logs autonomous EBC pushes to CSV (no protocol knowledge needed)
+tools/relay.py             — Windows-only COM-port relay for protocol sniffing; hardcoded TOOL_PORT/DEVICE_PORT
 ```
 
 ## How to Help Me (Claude Instructions)
