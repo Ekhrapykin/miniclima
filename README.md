@@ -34,20 +34,37 @@ EBC10 "PC" RS232 port
 ```bash
 git clone https://github.com/youruser/miniclima-rs232.git
 cd miniclima-rs232
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Usage
 
-### Passive logger (works immediately)
+### Read device status
 ```bash
-python src/logger.py --port /dev/ttyUSB0
+python src/client.py --port /dev/ttyACM0 status
+python src/client.py --port /dev/ttyACM0 vals
+python src/client.py --port /dev/ttyACM0 sernum
+python src/client.py --port /dev/ttyACM0 date
+python src/client.py --port /dev/ttyACM0 time
+python src/client.py --port /dev/ttyACM0 ophours
 ```
 
-### Interactive client
+### Control
 ```bash
-python src/client.py --port /dev/ttyUSB0
+python src/client.py --port /dev/ttyACM0 start
+python src/client.py --port /dev/ttyACM0 stop
+python src/client.py --port /dev/ttyACM0 set-sp 55
+python src/client.py --port /dev/ttyACM0 set-log-time 15
+python src/client.py --port /dev/ttyACM0 set-date 26.03.26
+python src/client.py --port /dev/ttyACM0 set-time 14:54
 ```
+
+### History dump
+```bash
+python src/client.py --port /dev/ttyACM0 dump
+```
+
+Add `-v` for verbose serial debug output.
 
 ---
 
@@ -369,10 +386,10 @@ Pushed immediately after a successful `#setPoint` write.
 
 | File | Purpose |
 |---|---|
-| `src/relay.py` | Windows relay for sniffing via com0com |
+| `src/ebc10.py` | `Ebc10Client` class — protocol implementation |
+| `src/client.py` | CLI entry point |
 | `src/logger.py` | Passive listener — logs pushed data to CSV |
-| `src/protocol.py` | Protocol constants and helpers |
-| `src/client.py` | High-level EBC10 client |
+| `src/relay.py` | Windows relay for sniffing via com0com |
 | `docs/SNIFFING_PLAN.md` | Step-by-step sniffing guide |
 | `captures/` | Raw hex dumps from sniffing sessions |
 
