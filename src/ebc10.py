@@ -9,6 +9,8 @@ import serial
 
 log = logging.getLogger("ebc10")
 
+_MAX_READ_LINES = 4  # max lines to scan before giving up on a response
+
 
 def encode_nibbles(value: str) -> bytes:
     """
@@ -24,10 +26,7 @@ def encode_nibbles(value: str) -> bytes:
     """
     out = bytearray()
     for ch in value:
-        if ch.isdigit():
-            out.append(int(ch))
-        else:
-            out.append(ord(ch))
+        out.append(int(ch) if ch.isdigit() else ord(ch))
     out.append(0x0D)
     return bytes(out)
 
@@ -71,35 +70,45 @@ class Ebc10Client:
         """Send a read command; return first non-echo, non-empty response line."""
         self._flush_input()
         self._send((cmd + "\r").encode("ascii"))
-        for _ in range(4):
+        for _ in range(_MAX_READ_LINES):
             line = self._readline()
-            if not line:
+            if not line or line == cmd:
                 continue
-            if line.rstrip("\r") == cmd:
-                continue  # skip echo
             return line
         return ""
 
-    def _write_cmd(self, cmd: str, value: str) -> bool:
+    def _write_cmd(self, cmd: str, value: str = "", raw_payload: bytes | None = None) -> bool:
         """
-        Send a write command: cmd\\r → wait for '?' prompt → send nibble-encoded value.
+        Send a write command: cmd\\r → wait for '?' prompt → send payload.
+        Pass `value` for nibble-encoded writes, or `raw_payload` for binary payloads.
         Returns True on '!' (success).
         """
         self._flush_input()
         self._send((cmd + "\r").encode("ascii"))
-        for _ in range(4):
-            line = self._readline()
-            if line == "?":
+        for _ in range(_MAX_READ_LINES):
+            if self._readline() == "?":
                 break
         else:
             log.warning(f"write_cmd({cmd!r}): no '?' prompt received")
             return False
-        self._send(encode_nibbles(value))
+        self._send(raw_payload if raw_payload is not None else encode_nibbles(value))
         resp = self._readline()
         if resp != "!":
-            log.warning(f"write_cmd({cmd!r}, {value!r}): unexpected response {resp!r}")
+            log.warning(f"write_cmd({cmd!r}): unexpected response {resp!r}")
             return False
         return True
+
+    def _read_int(self, cmd: str) -> int | None:
+        try:
+            return int(self._cmd(cmd))
+        except ValueError:
+            return None
+
+    def _echo_cmd(self, cmd: str) -> bool:
+        """Send a command that responds with an echo (start/stop pattern)."""
+        self._flush_input()
+        self._send((cmd + "\r").encode("ascii"))
+        return cmd in self._readline().lower()
 
     # --- read commands -------------------------------------------------------
 
@@ -109,7 +118,7 @@ class Ebc10Client:
         Raw format: #004537 M 170908.04 Set:55 40 70 02 15 -05 04
         """
         raw = self._cmd("sernum")
-        result: dict = {"raw": raw}
+        result = {"raw": raw}
         try:
             parts = raw.split()
             result["serial"]   = parts[0]
@@ -138,7 +147,7 @@ class Ebc10Client:
                  or "Stand by 70  26  +24  +24  00"
         """
         raw = self._cmd("vals")
-        result: dict = {"raw": raw, "state": "unknown"}
+        result = {"raw": raw, "state": "unknown"}
         try:
             parts = raw.split()
             if raw.startswith("Stand"):
@@ -166,18 +175,10 @@ class Ebc10Client:
         return self._cmd("time")
 
     def read_setlog_time(self) -> int | None:
-        raw = self._cmd("setLogTime")
-        try:
-            return int(raw)
-        except ValueError:
-            return None
+        return self._read_int("setLogTime")
 
     def read_ophours(self) -> int | None:
-        raw = self._cmd("ophours")
-        try:
-            return int(raw)
-        except ValueError:
-            return None
+        return self._read_int("ophours")
 
     def keepalive(self):
         self._send(b"\r")
@@ -185,17 +186,14 @@ class Ebc10Client:
     # --- write commands ------------------------------------------------------
 
     def set_log_time(self, minutes: int) -> bool:
-        """Set log interval (1–99 min)."""
         if not 1 <= minutes <= 99:
             raise ValueError(f"minutes must be 1–99, got {minutes}")
         return self._write_cmd("setLogTime", str(minutes).zfill(2))
 
     def set_date(self, date_str: str) -> bool:
-        """Set date. date_str format: 'DD.MM.YY' e.g. '26.03.26'"""
         return self._write_cmd("date", date_str)
 
     def set_time(self, time_str: str) -> bool:
-        """Set time. time_str format: 'HH:MM' e.g. '14:54'"""
         return self._write_cmd("time", time_str)
 
     def set_setpoint(self, rh_percent: int) -> bool:
@@ -206,38 +204,15 @@ class Ebc10Client:
         """
         if not 0 <= rh_percent <= 99:
             raise ValueError(f"setpoint must be 0–99%, got {rh_percent}")
-        tens    = rh_percent // 10
-        units   = rh_percent % 10
-        payload = bytes([0x00, 0x00, tens, units, 0x0D])
-        self._flush_input()
-        self._send(b"#setPoint\r")
-        for _ in range(4):
-            line = self._readline()
-            if line == "?":
-                break
-        else:
-            log.warning("set_setpoint: no '?' prompt received")
-            return False
-        self._send(payload)
-        resp = self._readline()
-        if resp != "!":
-            log.warning(f"set_setpoint({rh_percent}): unexpected response {resp!r}")
-            return False
-        return True
+        tens  = rh_percent // 10
+        units = rh_percent % 10
+        return self._write_cmd("#setPoint", raw_payload=bytes([0x00, 0x00, tens, units, 0x0D]))
 
     def start(self) -> bool:
-        """Start the unit. EBC echoes 'start' back (no '!' response)."""
-        self._flush_input()
-        self._send(b"start\r")
-        resp = self._readline()
-        return "start" in resp.lower()
+        return self._echo_cmd("start")
 
     def stop(self) -> bool:
-        """Stop the unit. EBC echoes 'stop' back (no '!' response)."""
-        self._flush_input()
-        self._send(b"stop\r")
-        resp = self._readline()
-        return "stop" in resp.lower()
+        return self._echo_cmd("stop")
 
     def dump(self) -> str:
         """
@@ -246,10 +221,12 @@ class Ebc10Client:
         """
         self._flush_input()
         self._send(b"dump\r")
-        for _ in range(4):
-            line = self._readline()
-            if "really" in line.lower():
+        for _ in range(_MAX_READ_LINES):
+            if "really" in self._readline().lower():
                 break
+        else:
+            log.warning("dump: no 'really?' prompt received")
+            return ""
         self._send(b"yes\r")
         data = bytearray()
         while True:
