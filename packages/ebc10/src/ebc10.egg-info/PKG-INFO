@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: ebc10
+Version: 0.1.0
+Summary: miniClima EBC10 RS232 protocol library
+Requires-Python: >=3.10
+Requires-Dist: pyserial>=3.5

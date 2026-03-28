@@ -1,0 +1,20 @@
+[project]
+name = "miniclima-api"
+version = "0.1.0"
+description = "miniClima EBC10 FastAPI server"
+requires-python = ">=3.10"
+dependencies = [
+    "ebc10",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+]
+
+[tool.uv.sources]
+ebc10 = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]

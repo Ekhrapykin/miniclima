@@ -1,0 +1,8 @@
+[project]
+name = "ebc10"
+version = "0.1.0"
+description = "miniClima EBC10 RS232 protocol library"
+requires-python = ">=3.10"
+dependencies = [
+    "pyserial>=3.5",
+]
