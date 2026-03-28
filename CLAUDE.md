@@ -124,25 +124,19 @@ TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex str
 ## Repository Structure
 ```
 ~/Projects/claude/miniclima
-├── README.md               # Technical documentation (full protocol reference)
-├── CLAUDE.md               # This file
-├── pyproject.toml          # uv project — dependencies (pyserial)
+├── pyproject.toml              # uv workspace root
+├── packages/ebc10/             # library: Client, encode_nibbles, Cmd
+├── apps/cli/                   # CLI app — entry point: `ebc10 <cmd>`
+├── apps/api/                   # FastAPI app — REST wrapper over Client
+├── tools/                      # standalone scripts: logger.py, relay.py
 ├── docs/
-│   ├── SNIFFING_PLAN.md    # Step-by-step sniffing guide
-│   └── miniclima (1).md    # Full prior research conversation
-├── src/
-│   ├── ebc10.py            # Ebc10Client class — protocol implementation
-│   ├── cmd_enum.py         # Cmd(str, Enum) — CLI command names
-│   ├── client.py           # CLI entry point (Cmd enum, match/case)
-│   ├── logger.py           # Passive CSV listener
-│   └── relay.py            # COM port relay for sniffing (Windows, com0com)
-└── captures/               # Raw hex dumps from sniffing sessions
+└── captures/
 ```
 
 ## How to Help Me (Claude Instructions)
 - Protocol is ASCII text, not binary — do not suggest binary framing or checksums.
 - When I paste hex dumps, help identify: command names, nibble-encoded values, response codes.
-- Protocol is implemented in `src/ebc10.py` (`Ebc10Client`); CLI in `src/client.py`.
+- Protocol is implemented in `packages/ebc10/src/ebc10/client.py` (`Client`); CLI in `apps/cli/src/cli/main.py`.
 - When implementing writes, use nibble encoding (digit value, not ASCII code).
 - `#setPoint` takes the SP value as `\x00\x00[tens_nibble][units_nibble]\r` — the `\x00\x00` prefix is confirmed but purpose unknown; use it as-is.
 - `start\r` and `stop\r` respond with a command echo, NOT `!\r\n` — check for echo string, not `!`.
@@ -153,3 +147,4 @@ TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex str
 - Flag unconfirmed behaviour with `# TODO: confirm` comments.
 - Target: Python 3.10+, pyserial, Raspberry Pi (`/dev/ttyACM0` with QinHeng CH34x adapter).
 - Keep it simple — this is a single-device integration, not a general library.
+- Do NOT use `uvicorn[standard]` on low-RAM ARM devices (Orange Pi Zero etc.) — it pulls in `uvloop` which OOMs during compilation. Use plain `uvicorn`.
