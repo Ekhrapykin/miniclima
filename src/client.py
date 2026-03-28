@@ -244,14 +244,16 @@ class Ebc10Client:
         return True
 
     def start(self) -> bool:
+        self._flush_input()
         self._send(b"start\r")
         resp = self._readline()
-        return resp == "!"
+        return "start" in resp.lower()
 
     def stop(self) -> bool:
+        self._flush_input()
         self._send(b"stop\r")
         resp = self._readline()
-        return resp == "!"
+        return "stop" in resp.lower()
 
     def dump(self) -> str:
         """
