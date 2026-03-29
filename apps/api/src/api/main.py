@@ -19,9 +19,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
 from ebc10 import Client
+
+# --- Prometheus metrics ---
+_m_humidity = Gauge("ebc10_humidity_percent", "Relative humidity reading (%RH)")
+_m_temp = Gauge("ebc10_temperature_celsius", "Temperature (°C)", ["sensor"])
+_m_sp = Gauge("ebc10_setpoint_percent", "Humidity setpoint (%RH)")
+_m_ophours = Gauge("ebc10_operating_hours", "Operating hours")
+_m_running = Gauge("ebc10_device_running", "1 if device is running, 0 if standby")
+_m_poll_errors = Counter("ebc10_poll_errors_total", "Total number of poll errors")
 
 log = logging.getLogger("api")
 
@@ -86,6 +96,20 @@ async def _poll_loop():
             async with _lock:
                 data = await asyncio.to_thread(_read_status)
             _latest = data
+            # update Prometheus metrics
+            vals = data.get("vals", {})
+            sernum = data.get("sernum", {})
+            if vals.get("rh") is not None:
+                _m_humidity.set(vals["rh"])
+            if vals.get("t1") is not None:
+                _m_temp.labels(sensor="t1").set(vals["t1"])
+            if vals.get("t2") is not None:
+                _m_temp.labels(sensor="t2").set(vals["t2"])
+            if sernum.get("sp") is not None:
+                _m_sp.set(sernum["sp"])
+            if data.get("ophours") is not None:
+                _m_ophours.set(data["ophours"])
+            _m_running.set(1 if vals.get("state") == "running" else 0)
             msg = json.dumps(data)
             dead = []
             for ws in _ws_clients:
@@ -99,6 +123,7 @@ async def _poll_loop():
             raise
         except Exception as e:
             log.warning("poll error: %s", e)
+            _m_poll_errors.inc()
             _close_client()
             await asyncio.sleep(10)
             continue
@@ -142,6 +167,13 @@ async def websocket_endpoint(ws: WebSocket):
         pass
     finally:
         _ws_clients.discard(ws)
+
+
+# --- Prometheus scrape endpoint ---
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # --- read endpoints (return cached _latest when available) ---

@@ -1,0 +1,153 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "ebc10",
+    "title": "miniClima EBC10",
+    "tags": ["ebc10", "humidity"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "15s",
+    "panels": [
+      {
+        "type": "timeseries",
+        "title": "Humidity (%RH)",
+        "id": 1,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          {
+            "expr": "ebc10_humidity_percent",
+            "legendFormat": "Humidity",
+            "refId": "A"
+          },
+          {
+            "expr": "ebc10_setpoint_percent",
+            "legendFormat": "Setpoint",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": { "lineWidth": 2 }
+          },
+          "overrides": [
+            {
+              "matcher": { "id": "byName", "options": "Setpoint" },
+              "properties": [
+                { "id": "custom.lineStyle", "value": { "dash": [8, 4], "fill": "dash" } },
+                { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+              ]
+            }
+          ]
+        },
+        "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 }
+      },
+      {
+        "type": "stat",
+        "title": "Current Humidity",
+        "id": 2,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          { "expr": "ebc10_humidity_percent", "refId": "A" }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "blue", "value": null },
+                { "color": "green", "value": 35 },
+                { "color": "red", "value": 75 }
+              ]
+            }
+          }
+        },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+        "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 }
+      },
+      {
+        "type": "stat",
+        "title": "Device State",
+        "id": 3,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          { "expr": "ebc10_device_running", "refId": "A" }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "type": "value", "options": { "0": { "text": "Stand by", "color": "orange" }, "1": { "text": "Running", "color": "green" } } }
+            ],
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }, { "color": "green", "value": 1 }] }
+          }
+        },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "textMode": "auto" },
+        "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 }
+      },
+      {
+        "type": "stat",
+        "title": "Operating Hours",
+        "id": 4,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          { "expr": "ebc10_operating_hours", "refId": "A" }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "h" }
+        },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "textMode": "auto" },
+        "gridPos": { "x": 16, "y": 4, "w": 4, "h": 4 }
+      },
+      {
+        "type": "stat",
+        "title": "Setpoint",
+        "id": 5,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          { "expr": "ebc10_setpoint_percent", "refId": "A" }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "percent" }
+        },
+        "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "textMode": "auto" },
+        "gridPos": { "x": 20, "y": 4, "w": 4, "h": 4 }
+      },
+      {
+        "type": "timeseries",
+        "title": "Temperature (°C)",
+        "id": 6,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          { "expr": "ebc10_temperature_celsius{sensor=\"t1\"}", "legendFormat": "T1 (cold side)", "refId": "A" },
+          { "expr": "ebc10_temperature_celsius{sensor=\"t2\"}", "legendFormat": "T2 (hot side)", "refId": "B" }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "celsius", "custom": { "lineWidth": 2 } }
+        },
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+      },
+      {
+        "type": "timeseries",
+        "title": "Poll Errors",
+        "id": 7,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "targets": [
+          { "expr": "increase(ebc10_poll_errors_total[5m])", "legendFormat": "Errors (5m)", "refId": "A" }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "lineWidth": 2 },
+            "color": { "mode": "fixed", "fixedColor": "red" }
+          }
+        },
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+      }
+    ]
+  },
+  "overwrite": true
+}
