@@ -16,7 +16,8 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Turbopack has no ARM native bindings — use webpack on ARM/linux
-RUN npm run build -- --webpack
+RUN #npm run build -- --webpack
+RUN npm run build
 
 # Stage 2 — runtime (standalone output only, no node_modules)
 FROM node:22-slim AS runner

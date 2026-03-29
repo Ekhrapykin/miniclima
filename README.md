@@ -429,3 +429,28 @@ Pushed immediately after a successful `#setPoint` write.
 - Firmware: `170908.04` (2017-09-08 rev 4)
 - Settings at last capture: SP=50%, LO=39%, HI=69%, HY=2, LT=1min, TO=-5°C
 - Operating hours at last capture: 4 hours
+
+
+Trounbleshoot
+The container runs as uid/gid 1000, but /dev/ttyACM0 is root:dialout (gid=20). Even though the host user is in dialout, rootless Docker doesn't pass supplementary groups into the container.
+
+The clean fix is a udev rule to make ttyACM* devices owned by the user's primary group (or world-rw). Let me check if there's already one:
+
+No existing rule. The fix: a udev rule that sets ttyACM* to gid=1000 (khrap's primary group) with 0660, so the container process (which runs as gid=1000) can access it.
+
+Run this on ben:
+
+echo 'KERNEL=="ttyACM[0-9]*", GROUP="khrap", MODE="0660"' | sudo tee /etc/udev/rules.d/99-ttyacm.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --name-match=ttyACM0
+
+After that, verify:
+
+ls -la /dev/ttyACM0
+# should show: crw-rw---- 1 root khrap ...
+
+Then the container (uid/gid=1000 = khrap) will have rw access.
+
+Why not --group-add dialout? In rootless Docker, GID mapping doesn't include supplementary groups from the host, so it won't work reliably.
+
+Why not MODE="0666"? Works too, but unnecessarily world-writable. Group-based is cleaner.
