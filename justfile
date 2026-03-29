@@ -51,15 +51,24 @@ docker-frontend:
 # Build both images
 docker-build: docker-build-api docker-build-frontend
 
-# Start both containers
-docker-up: docker-api docker-frontend
+# Start full stack (API + frontend + Prometheus + Grafana)
+docker-up:
+    docker compose up -d
 
-# Stop and remove both containers
+# Stop full stack
 docker-down:
-    docker rm -f ebc10-api ebc10-frontend 2>/dev/null || true
+    docker compose down
 
 docker-restart: docker-down docker-build docker-up
-    docker ps
+    docker compose ps
+
+# Show running containers
+docker-ps:
+    docker compose ps
+
+# Follow logs (optionally pass a service name: just docker-logs api)
+docker-logs service="":
+    docker compose logs -f {{service}}
 
 # Run the EBC10 CLI — e.g. just cli status, just cli set-sp 55
 cli *args:
@@ -89,14 +98,14 @@ frontend-build:
 frontend-lint:
     cd frontend && npm run lint
 
-# rsync project to bill (excludes .venv, __pycache__, uv.lock)
+# rsync project to ben (excludes .venv, __pycache__, uv.lock)
 deploy:
     rsync -av --exclude .venv --exclude __pycache__ --exclude '*.pyc' --exclude uv.lock \
-        ./ bill:/home/khrap/miniclima/
+        ./ ben:/home/khrap/miniclima/
 
-# Run uv sync on bill
-sync-bill:
-    ssh bill "cd /home/khrap/miniclima && uv sync"
+# Run uv sync on ben
+sync-ben:
+    ssh ben "cd /home/khrap/miniclima && uv sync"
 
-# Deploy + sync bill in one shot
-push: deploy sync-bill
+# Deploy + sync ben in one shot
+push: deploy sync-ben

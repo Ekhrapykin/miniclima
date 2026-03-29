@@ -29,9 +29,14 @@ just push             # rsync to bill + uv sync there
 just frontend-dev     # Next.js dev server (port 3000)
 just frontend-build   # production build
 
-# Docker (API only)
-docker build -t miniclima-api .
-docker run -d --device=/dev/ttyACM0:/dev/ttyACM0 -p 8000:8000 miniclima-api
+# Docker — build images
+just docker-build-api       # build API image
+just docker-build-frontend  # build frontend image (bakes NEXT_PUBLIC_API_URL)
+
+# Docker — run full stack (API + frontend + Prometheus + Grafana)
+docker compose up -d        # start all services
+docker compose down         # stop all services
+docker compose ps           # check status
 ```
 
 ---
@@ -148,7 +153,7 @@ packages/ebc10/src/ebc10/
   __init__.py   — re-exports Client, encode_nibbles, Cmd
 
 apps/cli/src/cli/main.py   — argparse entry point; uses Client as context manager
-apps/api/src/api/main.py   — FastAPI; PORT/BAUD from EBC10_PORT/EBC10_BAUD env; each handler opens fresh Client
+apps/api/src/api/main.py   — FastAPI; persistent serial connection with asyncio.Lock; background poll loop broadcasts to WebSocket clients; /metrics for Prometheus
 tools/logger.py            — passive listener, logs autonomous EBC pushes to CSV (no protocol knowledge needed)
 tools/relay.py             — Windows-only COM-port relay for protocol sniffing; hardcoded TOOL_PORT/DEVICE_PORT
 
@@ -175,3 +180,25 @@ Dockerfile                 — API-only image; copies packages/ebc10 + apps/api,
 - Target: Python 3.10+, pyserial, Raspberry Pi (`/dev/ttyACM0` with QinHeng CH34x adapter).
 - Keep it simple — this is a single-device integration, not a general library.
 - Do NOT use `uvicorn[standard]` on low-RAM ARM devices (Orange Pi Zero etc.) — it pulls in `uvloop` which OOMs during compilation. Use plain `uvicorn`.
+
+## Deployment Notes
+
+### Remote host
+Target device is `ben` (Orange Pi Zero, `/home/khrap/miniclima`). Use `ssh ben` and `just push` to sync.
+
+### uv lock drift
+After editing any `pyproject.toml`, run `uv lock` locally before pushing — the Dockerfile uses `uv sync --frozen`, so a stale `uv.lock` silently skips new deps.
+
+### Rootless Docker + serial device (/dev/ttyACM0)
+The host user's supplementary groups (e.g. `dialout`) are NOT inherited by rootless containers. Fix with a udev rule on ben:
+```bash
+echo 'KERNEL=="ttyACM[0-9]*", GROUP="khrap", MODE="0660"' \
+  | sudo tee /etc/udev/rules.d/99-ttyacm.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=ttyACM0
+```
+
+### WebSocket library
+Add `websockets>=12.0` as a standalone dep — do NOT use `uvicorn[standard]` (OOMs on ARM).
+
+### Grafana data source
+On first Grafana login, manually add Prometheus data source with URL `http://prometheus:9090`. The EBC10 dashboard auto-provisions from `grafana/dashboards/json/`.
