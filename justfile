@@ -58,6 +58,9 @@ docker-up: docker-api docker-frontend
 docker-down:
     docker rm -f ebc10-api ebc10-frontend 2>/dev/null || true
 
+docker-restart: docker-down docker-build docker-up
+    docker ps
+
 # Run the EBC10 CLI — e.g. just cli status, just cli set-sp 55
 cli *args:
     uv run --no-sync ebc10 --port {{port}} {{args}}
