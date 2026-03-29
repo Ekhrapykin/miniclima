@@ -1,11 +1,2 @@
-[project]
-name = "miniclima"
-version = "0.1.0"
-description = "miniClima EBC10 RS232 client"
-requires-python = ">=3.10"
-dependencies = [
-    "pyserial>=3.5",
-]
-
-[project.scripts]
-ebc10 = "src.client:main"
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]

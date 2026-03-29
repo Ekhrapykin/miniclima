@@ -3,17 +3,16 @@
 miniClima EBC10 — CLI entry point.
 
 Usage:
-    python src/client.py --port /dev/ttyACM0 status
-    python src/client.py --port /dev/ttyACM0 set-sp 55
-    python src/client.py --port /dev/ttyACM0 start
-    python src/client.py --port /dev/ttyACM0 -v vals
+    ebc10 --port /dev/ttyACM0 status
+    ebc10 --port /dev/ttyACM0 set-sp 55
+    ebc10 --port /dev/ttyACM0 start
+    ebc10 --port /dev/ttyACM0 -v vals
 """
 
 import argparse
 import logging
 
-from cmd_enum import Cmd
-from ebc10 import Ebc10Client
+from ebc10 import Cmd, Client
 
 
 def main():
@@ -52,7 +51,7 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    with Ebc10Client(args.port, args.baud) as c:
+    with Client(args.port, args.baud) as c:
         match Cmd(args.cmd):
             case Cmd.STATUS:
                 s = c.read_sernum()

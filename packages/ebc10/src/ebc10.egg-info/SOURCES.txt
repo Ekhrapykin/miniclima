@@ -1,0 +1,9 @@
+pyproject.toml
+src/ebc10/__init__.py
+src/ebc10/client.py
+src/ebc10/cmd_enum.py
+src/ebc10.egg-info/PKG-INFO
+src/ebc10.egg-info/SOURCES.txt
+src/ebc10.egg-info/dependency_links.txt
+src/ebc10.egg-info/requires.txt
+src/ebc10.egg-info/top_level.txt

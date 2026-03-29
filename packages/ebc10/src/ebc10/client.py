@@ -31,7 +31,7 @@ def encode_nibbles(value: str) -> bytes:
     return bytes(out)
 
 
-class Ebc10Client:
+class Client:
     READ_TIMEOUT = 2.0
 
     def __init__(self, port: str, baud: int = 9600):

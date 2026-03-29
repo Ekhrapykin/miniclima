@@ -1,0 +1,26 @@
+# Dependencies / build artifacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Frontend (not part of API image)
+frontend/
+node_modules/
+
+# CLI app (not needed in API image)
+apps/cli/
+
+# Dev tools
+tools/
+
+# Environment / secrets
+.env
+
+# Git / IDE
+.git/
+.idea/
+
+# Logs
+*.log

@@ -1,3 +1,41 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+# Install / sync all workspace packages
+uv sync
+
+# CLI — read device status
+uv run ebc10 --port /dev/ttyACM0 status
+
+# CLI — all subcommands: vals sernum date time ophours dump start stop set-sp set-log-time set-date set-time
+uv run ebc10 --port /dev/ttyACM0 <cmd> [value]
+
+# API server (hot-reload, port 8000)
+uv run --package miniclima-api uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+# Passive logger (streams pushed data to CSV)
+uv run python tools/logger.py --port /dev/ttyACM0
+
+# Task runner (just must be installed: brew install just / sudo apt install just)
+just                  # list all recipes
+just sync             # uv sync
+just api              # start API server
+just cli <args>       # CLI passthrough — e.g. just cli set-sp 55
+just push             # rsync to bill + uv sync there
+just frontend-dev     # Next.js dev server (port 3000)
+just frontend-build   # production build
+
+# Docker (API only)
+docker build -t miniclima-api .
+docker run -d --device=/dev/ttyACM0:/dev/ttyACM0 -p 8000:8000 miniclima-api
+```
+
+---
+
 # miniClima EBC10 — RS232 Integration Project
 
 ## Project Goal
@@ -99,54 +137,41 @@ TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex str
 - Settings change: `26.03.26 09:45 Set:57 39 69 02 15 -05 04\r\n` (after `#setPoint` write)
 - Error: `26.03.26 14:55 Signal Error\r\n`
 
-## Current Status
-- [x] 5 sniffing sessions completed (session 5 had sensor + multiple write attempts)
-- [x] Serial parameters confirmed (9600, 8N1)
-- [x] Protocol identified as plain ASCII terminal
-- [x] All READ commands decoded: sernum, date, time, setLogTime, vals, ophours, keepalive
-- [x] setLogTime, date, time writes confirmed with nibble encoding
-- [x] `#setPoint` write decoded (SP only, `\x00\x00` prefix unknown)
-- [x] `start\r` and `stop\r` TX commands confirmed
-- [x] `vals` response decoded (Running/Stand by + sensor readings)
-- [x] `ophours` command discovered
-- [x] `dump\r` → `yes\r` history dump command confirmed; data is ASCII hex text
-- [x] `protocol.py` deleted (redundant binary placeholder); `ebc10.py` created with full ASCII client
-- [x] `client.py` rewritten as CLI entry point (subcommands, match/case, Cmd enum)
-- [x] `requirements.txt` replaced by `pyproject.toml` (uv)
-- [x] `start` / `stop` confirmed live: EBC echoes command back (`start\r\n`, `stop\r\n`) — no `!` response
-- [x] `vals` in standby confirmed: sensor readings present after "Stand by" prefix (same field offsets, offset=2)
-- [x] Live test on Raspberry Pi via `/dev/ttyACM0` (QinHeng CH34x adapter) — all read commands + start/stop verified
-- [ ] AlarmMin / AlarmMax / Hysteresis write commands not yet captured (session 5 too noisy)
-- [ ] Temperature offset write not yet captured
-- [ ] History dump record format fully decoded
-- [ ] `#setPoints+NNN` write-form effect — confirmed via captures but not tested live
-
 ## Repository Structure
+
+uv workspace — three members (`packages/ebc10`, `apps/cli`, `apps/api`).
+
 ```
-~/Projects/claude/miniclima
-├── README.md               # Technical documentation (full protocol reference)
-├── CLAUDE.md               # This file
-├── pyproject.toml          # uv project — dependencies (pyserial)
-├── docs/
-│   ├── SNIFFING_PLAN.md    # Step-by-step sniffing guide
-│   └── miniclima (1).md    # Full prior research conversation
-├── src/
-│   ├── ebc10.py            # Ebc10Client class — protocol implementation
-│   ├── client.py           # CLI entry point (Cmd enum, match/case)
-│   ├── logger.py           # Passive CSV listener
-│   └── relay.py            # COM port relay for sniffing (Windows, com0com)
-└── captures/               # Raw hex dumps from sniffing sessions
+packages/ebc10/src/ebc10/
+  client.py     — Client class: _cmd / _write_cmd / _echo_cmd low-level I/O; all read/write methods
+  cmd_enum.py   — Cmd(str, Enum) subcommand names; __str__ = str.__str__ fixes Python 3.11 argparse regression
+  __init__.py   — re-exports Client, encode_nibbles, Cmd
+
+apps/cli/src/cli/main.py   — argparse entry point; uses Client as context manager
+apps/api/src/api/main.py   — FastAPI; PORT/BAUD from EBC10_PORT/EBC10_BAUD env; each handler opens fresh Client
+tools/logger.py            — passive listener, logs autonomous EBC pushes to CSV (no protocol knowledge needed)
+tools/relay.py             — Windows-only COM-port relay for protocol sniffing; hardcoded TOOL_PORT/DEVICE_PORT
+
+frontend/                  — Next.js 16 app (npm run dev / build / lint)
+  NOTE: Next.js 16 has breaking changes vs earlier versions.
+  Read node_modules/next/dist/docs/ before writing frontend code.
+
+Dockerfile                 — API-only image; copies packages/ebc10 + apps/api, excludes frontend/cli/tools
+.dockerignore              — excludes frontend/, apps/cli/, tools/, .venv/, node_modules/
 ```
 
 ## How to Help Me (Claude Instructions)
 - Protocol is ASCII text, not binary — do not suggest binary framing or checksums.
 - When I paste hex dumps, help identify: command names, nibble-encoded values, response codes.
-- Protocol is implemented in `src/ebc10.py` (`Ebc10Client`); CLI in `src/client.py`.
+- Protocol is implemented in `packages/ebc10/src/ebc10/client.py` (`Client`); CLI in `apps/cli/src/cli/main.py`.
 - When implementing writes, use nibble encoding (digit value, not ASCII code).
 - `#setPoint` takes the SP value as `\x00\x00[tens_nibble][units_nibble]\r` — the `\x00\x00` prefix is confirmed but purpose unknown; use it as-is.
 - `start\r` and `stop\r` respond with a command echo, NOT `!\r\n` — check for echo string, not `!`.
 - History dump: `dump\r` → EBC says `really?\r\n` → send `yes\r` → receive ASCII hex stream ending with `!\r\n`. Each byte encoded as 2 hex chars.
 - `#setPoints+NNN`: Tool sends `+000` as the poll query each cycle, then optionally `+NNN` (NNN = 3-digit decimal SP target) as a write attempt. Whether this actually sets SP needs live confirmation — mark with `# TODO: confirm`. The confirmed SP write is `#setPoint` (no 's') with `\x00\x00` prefix and nibble encoding.
+- `_write_cmd()` accepts `raw_payload: bytes` for binary payloads (e.g. `#setPoint` with `\x00\x00` prefix). Use `raw_payload=` instead of `value=` to skip nibble encoding.
+- `dump()` reads the response with `ser.read(256)` in a loop (not readline) — the hex stream is not line-delimited.
 - Flag unconfirmed behaviour with `# TODO: confirm` comments.
 - Target: Python 3.10+, pyserial, Raspberry Pi (`/dev/ttyACM0` with QinHeng CH34x adapter).
 - Keep it simple — this is a single-device integration, not a general library.
+- Do NOT use `uvicorn[standard]` on low-RAM ARM devices (Orange Pi Zero etc.) — it pulls in `uvloop` which OOMs during compilation. Use plain `uvicorn`.

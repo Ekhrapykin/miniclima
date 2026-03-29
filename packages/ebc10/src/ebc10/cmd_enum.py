@@ -1,6 +1,8 @@
 from enum import Enum
 
 class Cmd(str, Enum):
+    __str__ = str.__str__
+
     STATUS       = "status"
     VALS         = "vals"
     SERNUM       = "sernum"

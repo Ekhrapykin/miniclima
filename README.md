@@ -32,39 +32,66 @@ EBC10 "PC" RS232 port
 ## Installation
 
 ```bash
-git clone https://github.com/youruser/miniclima-rs232.git
-cd miniclima-rs232
+# Build dependencies (Debian/Ubuntu/Raspberry Pi OS)
+sudo apt update
+sudo apt install -y build-essential python3-dev
+
+git clone https://github.com/ekhrapykin/miniclima.git
+cd miniclima
 uv sync
+
+# Optional: install just task runner
+sudo apt install just   # Debian/Ubuntu/Raspberry Pi OS
+# brew install just       # macOS
+
+# Docker
+sudo apt update
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
 ```
 
 ## Usage
 
-### Read device status
+### Via task runner (recommended)
 ```bash
-python src/client.py --port /dev/ttyACM0 status
-python src/client.py --port /dev/ttyACM0 vals
-python src/client.py --port /dev/ttyACM0 sernum
-python src/client.py --port /dev/ttyACM0 date
-python src/client.py --port /dev/ttyACM0 time
-python src/client.py --port /dev/ttyACM0 ophours
+just status                    # quick device status
+just cli vals                  # live readings
+just cli set-sp 55             # set setpoint to 55%
+just cli dump                  # retrieve history log
+just api                       # start API server (port 8000)
+just frontend-dev              # start Next.js dashboard (port 3000)
 ```
 
-### Control
+### Via CLI directly
 ```bash
-python src/client.py --port /dev/ttyACM0 start
-python src/client.py --port /dev/ttyACM0 stop
-python src/client.py --port /dev/ttyACM0 set-sp 55
-python src/client.py --port /dev/ttyACM0 set-log-time 15
-python src/client.py --port /dev/ttyACM0 set-date 26.03.26
-python src/client.py --port /dev/ttyACM0 set-time 14:54
-```
-
-### History dump
-```bash
-python src/client.py --port /dev/ttyACM0 dump
+uv run ebc10 --port /dev/ttyACM0 status
+uv run ebc10 --port /dev/ttyACM0 vals
+uv run ebc10 --port /dev/ttyACM0 start
+uv run ebc10 --port /dev/ttyACM0 stop
+uv run ebc10 --port /dev/ttyACM0 set-sp 55
+uv run ebc10 --port /dev/ttyACM0 set-log-time 15
+uv run ebc10 --port /dev/ttyACM0 set-date 26.03.26
+uv run ebc10 --port /dev/ttyACM0 set-time 14:54
+uv run ebc10 --port /dev/ttyACM0 dump
 ```
 
 Add `-v` for verbose serial debug output.
+
+## Docker (API server only)
+
+```bash
+docker build -t miniclima-api .
+
+docker run -d \
+  --device=/dev/ttyACM0:/dev/ttyACM0 \
+  -p 8000:8000 \
+  -e EBC10_PORT=/dev/ttyACM0 \
+  -e CORS_ORIGINS=http://localhost:3000 \
+  miniclima-api
+```
+
+The serial device must be passed with `--device` at runtime. If permission is denied, add `--group-add dialout` to the run command.
 
 ---
 
@@ -384,14 +411,16 @@ Pushed immediately after a successful `#setPoint` write.
 
 ## File Overview
 
-| File | Purpose |
+| Path | Purpose |
 |---|---|
-| `src/ebc10.py` | `Ebc10Client` class — protocol implementation |
-| `src/client.py` | CLI entry point |
-| `src/logger.py` | Passive listener — logs pushed data to CSV |
-| `src/relay.py` | Windows relay for sniffing via com0com |
-| `docs/SNIFFING_PLAN.md` | Step-by-step sniffing guide |
-| `captures/` | Raw hex dumps from sniffing sessions |
+| `packages/ebc10/` | `Client` class — protocol library (pyserial) |
+| `apps/api/` | FastAPI server (`api.main:app`) |
+| `apps/cli/` | `ebc10` CLI entry point |
+| `frontend/` | Next.js dashboard |
+| `tools/logger.py` | Passive listener — logs pushed data to CSV |
+| `tools/relay.py` | Windows COM-port relay for protocol sniffing |
+| `Dockerfile` | API-only image (excludes frontend and CLI) |
+| `justfile` | Task runner — `just --list` for all recipes |
 
 ## Device Info (unit on hand)
 
