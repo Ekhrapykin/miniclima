@@ -79,9 +79,7 @@ export default function Dashboard() {
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [logDraft, setLogDraft] = useState("");
-  const [readRate, setReadRate] = useState(5);
 
-  // init SP input once when first non-null SP arrives
   const spInitRef = useRef(false);
   useEffect(() => {
     if (!spInitRef.current && sernum.sp != null) {
@@ -90,7 +88,6 @@ export default function Dashboard() {
     }
   }, [sernum.sp]);
 
-  // init log interval input once when first non-null lt arrives
   const ltInitRef = useRef(false);
   useEffect(() => {
     if (!ltInitRef.current && sernum.lt != null) {
@@ -104,7 +101,6 @@ export default function Dashboard() {
     setTimeout(() => setFlash(null), 3000);
   };
 
-  // WebSocket connection with reconnect
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectDelay = 1000;
@@ -167,7 +163,6 @@ export default function Dashboard() {
     }
   };
 
-  // ── derived values ──────────────────────────────────────────────────────────
   const rh = vals.rh ?? 0;
   const sp = sernum.sp ?? 50;
   const isRunning = vals.state === "running";
@@ -176,6 +171,7 @@ export default function Dashboard() {
   const rhArc = (rh / 100) * ARC;
   const [spX1, spY1] = gaugePoint(sp, 71);
   const [spX2, spY2] = gaugePoint(sp, 93);
+  const [spLabelX, spLabelY] = gaugePoint(sp, 60);
 
   const stateColor = isRunning ? "var(--run)" : isStandby ? "var(--sby)" : "var(--tx-dim)";
   const stateText = isRunning ? "RUNNING" : isStandby ? "STANDBY" : "UNKNOWN";
@@ -446,8 +442,8 @@ export default function Dashboard() {
               % RH
             </text>
             <text
-              x={gaugePoint(sp, 60)[0]}
-              y={gaugePoint(sp, 60)[1]}
+              x={spLabelX}
+              y={spLabelY}
               textAnchor="middle"
               dominantBaseline="middle"
               fill="var(--amb)"
@@ -647,35 +643,6 @@ export default function Dashboard() {
             padding: "24px 28px",
           }}
         >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-              gap: 12,
-              marginBottom: 16,
-            }}
-          >
-            {/* read-only alarm / hy cells */}
-            <div className="cell">
-              <span className="cell-label">Alarm Lo (read-only)</span>
-              <span className="cell-val dim">
-                {sernum.lo != null ? `${sernum.lo}%` : "--"}
-              </span>
-            </div>
-            <div className="cell">
-              <span className="cell-label">Alarm Hi (read-only)</span>
-              <span className="cell-val dim">
-                {sernum.hi != null ? `${sernum.hi}%` : "--"}
-              </span>
-            </div>
-            <div className="cell">
-              <span className="cell-label">Hysteresis (read-only)</span>
-              <span className="cell-val dim">
-                {sernum.hy != null ? `×${sernum.hy}` : "--"}
-              </span>
-            </div>
-          </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             {/* log interval */}
             <span
@@ -718,37 +685,6 @@ export default function Dashboard() {
               Apply
             </button>
 
-            <div style={{ width: 1, height: 32, background: "var(--border-hi)", margin: "0 16px" }} />
-
-            {/* data read rate */}
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 10,
-                letterSpacing: "0.16em",
-                color: "var(--tx-label)",
-              }}
-            >
-              READ RATE
-            </span>
-            <input
-              type="number"
-              min={1}
-              max={60}
-              value={readRate}
-              onChange={(e) => setReadRate(Math.max(1, parseInt(e.target.value) || 5))}
-              className="sp-input"
-            />
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 10,
-                letterSpacing: "0.1em",
-                color: "var(--tx-label)",
-              }}
-            >
-              sec
-            </span>
           </div>
         </div>
       )}
