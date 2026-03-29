@@ -18,12 +18,6 @@ COPY apps/api apps/api/
 # Install miniclima-api + ebc10 (fastapi, uvicorn, pyserial) — no dev deps
 RUN uv sync --frozen --package miniclima-api --no-dev
 
-# Non-root user
-# Note: serial port access requires --device=/dev/ttyACM0:/dev/ttyACM0 at runtime
-#       and the host device must be accessible (e.g. chmod a+rw or group dialout)
-RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
-
 EXPOSE 8000
 
 CMD ["/app/.venv/bin/uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

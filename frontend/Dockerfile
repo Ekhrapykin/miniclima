@@ -1,5 +1,5 @@
 # Stage 1 — build
-FROM node:22-slim AS builder
+FROM node:25-slim AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build -- --webpack
 
 # Stage 2 — runtime (standalone output only, no node_modules)
-FROM node:22-slim AS runner
+FROM node:25-slim AS runner
 
 WORKDIR /app
 
