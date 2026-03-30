@@ -15,8 +15,15 @@ COPY next.config.ts tsconfig.json postcss.config.mjs eslint.config.mjs ./
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+ARG NEXT_PUBLIC_GRAFANA_URL=http://localhost:3002
+ENV NEXT_PUBLIC_GRAFANA_URL=$NEXT_PUBLIC_GRAFANA_URL
+
+ARG NEXT_PUBLIC_PROMETHEUS_URL=http://localhost:9090
+ENV NEXT_PUBLIC_PROMETHEUS_URL=$NEXT_PUBLIC_PROMETHEUS_URL
+
 # Turbopack has no ARM native bindings — use webpack on ARM/linux
-RUN npm run build -- --webpack
+RUN #npm run build -- --webpack
+RUN npm run build
 
 # Stage 2 — runtime (standalone output only, no node_modules)
 FROM node:22-slim AS runner

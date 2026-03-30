@@ -46,9 +46,11 @@ sudo apt install just   # Debian/Ubuntu/Raspberry Pi OS
 
 # Docker
 sudo apt update
+
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
+sudo apt install -y docker-compose-plugin
 ```
 
 ## Usage
@@ -78,20 +80,40 @@ uv run ebc10 --port /dev/ttyACM0 dump
 
 Add `-v` for verbose serial debug output.
 
-## Docker (API server only)
+## Docker — full stack
+
+| Service    | Default port | URL                     |
+|------------|--------------|-------------------------|
+| frontend   | 3000         | http://ben.local:3000   |
+| api        | 8000         | http://ben.local:8000   |
+| prometheus | 9090         | http://ben.local:9090   |
+| grafana    | 3001         | http://ben.local:3001   |
+
+Ports are configurable via `.env` (`API_PORT`, `FRONTEND_PORT`, `PROMETHEUS_PORT`, `GRAFANA_PORT`).
 
 ```bash
-docker build -t miniclima-api .
+# Build images (run on the target device)
+just docker-build-api
+just docker-build-frontend
 
-docker run -d \
-  --device=/dev/ttyACM0:/dev/ttyACM0 \
-  -p 8000:8000 \
-  -e EBC10_PORT=/dev/ttyACM0 \
-  -e CORS_ORIGINS=http://localhost:3000 \
-  miniclima-api
+# Start / stop all services
+docker compose up -d
+docker compose down
+docker compose ps
+
+# Rebuild and restart everything
+just docker-restart
 ```
 
-The serial device must be passed with `--device` at runtime. If permission is denied, add `--group-add dialout` to the run command.
+**Serial device permissions (rootless Docker):** The container runs as uid/gid 1000 and won't inherit the host's `dialout` group. Fix with a udev rule on the target device:
+
+```bash
+echo 'KERNEL=="ttyACM[0-9]*", GROUP="khrap", MODE="0660"' \
+  | sudo tee /etc/udev/rules.d/99-ttyacm.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=ttyACM0
+```
+
+**Grafana first run:** Add a Prometheus data source with URL `http://prometheus:9090`. The EBC10 dashboard will auto-provision.
 
 ---
 
@@ -414,12 +436,16 @@ Pushed immediately after a successful `#setPoint` write.
 | Path | Purpose |
 |---|---|
 | `packages/ebc10/` | `Client` class — protocol library (pyserial) |
-| `apps/api/` | FastAPI server (`api.main:app`) |
+| `apps/api/` | FastAPI + WebSocket server; persistent serial connection; `/metrics` for Prometheus |
 | `apps/cli/` | `ebc10` CLI entry point |
-| `frontend/` | Next.js dashboard |
+| `frontend/` | Next.js dashboard; WebSocket client with exponential backoff reconnect |
 | `tools/logger.py` | Passive listener — logs pushed data to CSV |
 | `tools/relay.py` | Windows COM-port relay for protocol sniffing |
-| `Dockerfile` | API-only image (excludes frontend and CLI) |
+| `Dockerfile` | API image (python:3.13-slim, ARM-compatible) |
+| `frontend/Dockerfile` | Frontend image (node:22-slim, ARM-compatible) |
+| `docker-compose.yml` | Full stack: api, frontend, prometheus, grafana |
+| `prometheus/prometheus.yml` | Scrape config targeting `api:8000/metrics` |
+| `grafana/dashboards/` | Provisioned EBC10 dashboard (humidity, temp, setpoint, errors) |
 | `justfile` | Task runner — `just --list` for all recipes |
 
 ## Device Info (unit on hand)
