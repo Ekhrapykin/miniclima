@@ -3,11 +3,17 @@
 
 set dotenv-load
 
-port          := env_var_or_default("EBC10_PORT", "/dev/ttyACM0")
-api_port      := env_var_or_default("API_PORT", "8000")
-frontend_port := env_var_or_default("FRONTEND_PORT", "3000")
-cors_origins  := env_var_or_default("CORS_ORIGINS", "http://localhost:3000")
-api_url       := env_var_or_default("NEXT_PUBLIC_API_URL", "http://localhost:8000")
+host            := env_var_or_default("HOST", "localhost")
+port            := env_var_or_default("EBC10_PORT", "/dev/ttyACM0")
+api_port        := env_var_or_default("API_PORT", "8000")
+frontend_port   := env_var_or_default("FRONTEND_PORT", "3000")
+prometheus_port := env_var_or_default("PROMETHEUS_PORT", "9090")
+grafana_port    := env_var_or_default("GRAFANA_PORT", "3002")
+
+api_url        := "http://" + host + ":" + api_port
+cors_origins   := "http://" + host + ":" + frontend_port
+grafana_url    := "http://" + host + ":" + grafana_port
+prometheus_url := "http://" + host + ":" + prometheus_port
 
 # List available recipes
 default:
@@ -29,6 +35,8 @@ docker-build-api:
 docker-build-frontend:
     docker build -t miniclima-frontend \
         --build-arg NEXT_PUBLIC_API_URL={{api_url}} \
+        --build-arg NEXT_PUBLIC_GRAFANA_URL={{grafana_url}} \
+        --build-arg NEXT_PUBLIC_PROMETHEUS_URL={{prometheus_url}} \
         frontend/
 
 # Run API container (requires serial device)
