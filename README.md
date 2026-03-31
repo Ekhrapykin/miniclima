@@ -353,34 +353,86 @@ The data stream is **ASCII hex text**: each flash memory byte is encoded as two 
 
 **Record Format (Variable Length)**
 
-The EBC10 history log does NOT use fixed blocks. It uses a tightly packed stream where bytes `F0` through `FF` act as absolute synchronization markers.
+The EBC10 history log does NOT use fixed blocks. It uses a tightly packed stream where bytes `0xF0`–`0xFF` act as absolute synchronization markers. Records are distinguished by their first byte.
 
-* **Settings Snapshot (`FB`) — 10 Bytes**
+Timestamps are BCD encoded: `26 03 31 17 00` = 2026-03-31 17:00.
 
-    `FB <SP> <LO> <HI> <HY> <TO> <??> <pad> <LT> <pad>`
+#### Record type table
 
-    (Values are plain Hex, not BCD. For `<TO>`, the `0x80` bit indicates a negative value, e.g., `0x85` = -5°C).
+| First byte | Name | Total size | Layout |
+|---|---|---|---|
+| `0x00`–`0xEF` | **Measurement** | 4 bytes | `[RH, T, T1, T2]` |
+| `F0` | **Log marker** | 6 bytes | `[F0, YY, MM, DD, HH, MM]` |
+| `F1` | **First record** | 6 bytes | `[F1, YY, MM, DD, HH, MM]` — once only, oldest entry |
+| `F4` | **Pump stop** | 7 bytes | `[F4, 00, YY, MM, DD, HH, MM]` |
+| `F5` | **Pump start** | 7 bytes | `[F5, 04, YY, MM, DD, HH, MM]` |
+| `F9` | **Alarm event** | 7 bytes | `[F9, 00, YY, MM, DD, HH, MM]` |
+| `FA` | **Start** | 6 bytes | `[FA, YY, MM, DD, HH, MM]` |
+| `FB` | **Settings snapshot** | 10 bytes | `[FB, SP, LO, HI, HY, TO, ??, pad, LT, pad]` |
+| `FD` | **Stop** | 6 bytes | `[FD, YY, MM, DD, HH, MM]` |
+| `FE` | **Error** | 6 bytes | `[FE, YY, MM, DD, HH, MM]` |
+| `FF` | **Empty flash** | — | End of valid data; stream stops here |
 
-* **Extended Event (`F9`) — 7 Bytes**
+#### Measurement record fields
 
-    `F9 00 <YY> <MM> <DD> <HH> <MM>`
+```
+RH   T    T1   T2
+│    │    │    │
+│    │    │    └─ Inner sensor 2 — hot side of Peltier (°C, signed)
+│    │    └────── Inner sensor 1 — cold side / probe (°C, signed)
+│    └─────────── Outer temperature sensor (°C, signed) — independent of T1/T2
+└──────────────── Relative humidity, outer sensor (%)
+```
 
-    (Timestamps are BCD encoded).
+Values > 127 are negative (interpret as signed byte, i.e. subtract 256).
 
-* **Standard Events (`F0`, `F1`, `FA`, `FD`, `FE`) — 6 Bytes**
+#### Settings snapshot (`FB`) fields
 
-    `<TYPE> <YY> <MM> <DD> <HH> <MM>`
+```
+SP   LO   HI   HY   TO   ??   pad  LT   pad
+│    │    │    │    │                │
+│    │    │    │    │                └─ Log interval (minutes)
+│    │    │    │    └────────────────── rH correction offset (°C, 0x80 bit = negative, e.g. 0x85 = -5)
+│    │    │    └─────────────────────── Hysteresis (%)
+│    │    └──────────────────────────── Alarm max (% RH)
+│    └───────────────────────────────── Alarm min (% RH)
+└────────────────────────────────────── Setpoint (% RH)
+```
 
-* **Periodic Measurements — 4 Bytes**
+All fields are plain hex (not BCD).
 
-    `<RH> <T> <T1> <T2>`
-    
-    Measurements have no `F`-prefix. Because readings never exceed 100 (`0x64`), they never collide with the `F0`-`FF` control bytes. `T1` and `T2` values > 127 are negative (subtract 256)
+#### Known event sequences
 
-* **All bytes are BCD-encoded**
-* `TYPE` byte: `FF`=empty flash (skipped), `FA`=event (timestamp only), `FB`=settings snapshot (d0=SP d1=LO d2=HI d3=HY d5=LT), `F1`=sensor reading (d0=RH d2=T1 d3=T2)
-* Timestamp: YY MM DD HH MM BCD-encoded (e.g. `26 03 26 10 33` = 26.03.2026 10:33)
-* `POST /dump/import` API endpoint retrieves full dump, parses records, pushes to Prometheus as historical samples via remote write
+**Start sequence** — always `FA` immediately followed by `FB`:
+```
+FA [timestamp]
+FB [settings]
+```
+
+**Stop sequence** — `FD` + settings + optional measurements:
+```
+FD [timestamp]
+FB [settings]
+[meas] ...
+```
+
+**Alarm triplet** — appears after every stop; all three share the same timestamp:
+```
+F9 00 [timestamp]   ← alarm triggered
+F0    [timestamp]   ← logged
+FE    [timestamp]   ← error flagged
+```
+
+**Pump cycle** — `F5`/`F4` alternate; measurements only appear after `F4` (pump-off):
+```
+F5 04 [timestamp]   ← pump on
+F4 00 [timestamp]   ← pump off
+[meas] ...          ← readings taken after pump stops
+```
+
+**F1** appears only once as the absolute first record in the flash, marking device first power-on or first use. Not seen in subsequent log rolls.
+
+`POST /dump/import` API endpoint retrieves full dump, parses records, pushes to Prometheus as historical samples via remote write.
 
 #### AlarmMin / AlarmMax / Hysteresis / Temperature offset writes
 **Status: NOT YET DECODED.** Write attempts during session 5 failed due to severe communication noise — no clean TX packet was captured. Need a stable sniffing session dedicated to changing these parameters.
@@ -440,7 +492,9 @@ Pushed immediately after a successful `#setPoint` write.
 | AlarmMin / AlarmMax write command | Not captured |
 | Hysteresis write command | Not captured |
 | Temperature offset write command | Not captured |
-| History dump record format — full decode | Command known, uses a tightly packed stream where bytes `F0` through `FF` act as absolute synchronization markers.(Variable Length) |
+| `F4`/`F5` sub-byte meaning | Sub-bytes observed: `F5`=`04`, `F4`=`00`; likely pump index or mode — not confirmed |
+| `F0` exact semantics | Always follows `F9` in the alarm triplet; meaning of the distinction unclear |
+| Alarm triplet vs real error | `F9`+`F0`+`FE` fires after every stop — unclear if it signals an actual fault or is a normal stop log entry |
 | `#setPoints+NNN` write form — effect confirmed? | Variants +000/+050/+111/+222/+444/+555/-555 seen; NNN likely = target SP in 3-digit decimal; whether it actually writes SP needs live test |
 
 ---

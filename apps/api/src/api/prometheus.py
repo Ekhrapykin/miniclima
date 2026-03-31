@@ -6,7 +6,6 @@ import logging
 import os
 import struct
 import urllib.request
-from datetime import datetime, timezone
 
 import snappy
 from fastapi.responses import Response
@@ -85,36 +84,42 @@ def _encode_timeseries(labels: list[tuple[str, str]], samples: list[tuple[float,
 
 def push_records_to_prometheus(records: list[dict]) -> int:
     """Build remote write payload from dump records and POST to Prometheus.
-    Handles FB (settings snapshots) and F1 (sensor readings).
     Returns number of distinct time series pushed.
     """
     series: dict[tuple, list[tuple[float, int]]] = {}
 
-    last_ts_ms: int | None = None
-
     for r in records:
-        # Track the most recent timestamp from event records
-        if ts := r.get("ts"):
-            try:
-                dt = datetime(ts["year"], ts["month"], ts["day"], ts["hour"], ts["minute"],
-                              tzinfo=timezone.utc)
-                last_ts_ms = int(dt.timestamp() * 1000)
-            except ValueError:
-                pass
+        if r["ts"] is None:
+            continue
+        ts_ms = int(r["ts"].timestamp() * 1000)
+        rtype = r["type"]
+        data = r.get("data") or {}
 
-        if last_ts_ms is None:
-            continue  # No timestamp context yet, skip
-
-        if r["type"] == "meas":
-            if r.get("rh") is not None:
+        if rtype == "measure":
+            if data.get("rh") is not None:
                 series.setdefault(("ebc10_humidity_percent", ()), []).append(
-                    (float(r["rh"]), last_ts_ms))
-            if r.get("t1") is not None:
-                series.setdefault(("ebc10_temperature_celsius", (("sensor", "t1"),)), []).append(
-                    (float(r["t1"]), last_ts_ms))
-            if r.get("t2") is not None:
-                series.setdefault(("ebc10_temperature_celsius", (("sensor", "t2"),)), []).append(
-                    (float(r["t2"]), last_ts_ms))
+                    (float(data["rh"]), ts_ms))
+            for sensor in ("t1", "t2", "t_out"):
+                if data.get(sensor) is not None:
+                    series.setdefault(("ebc10_temperature_celsius", (("sensor", sensor),)), []).append(
+                        (float(data[sensor]), ts_ms))
+
+        elif rtype == "settings":
+            if data.get("sp") is not None:
+                series.setdefault(("ebc10_setpoint_percent", ()), []).append(
+                    (float(data["sp"]), ts_ms))
+            if data.get("lo") is not None:
+                series.setdefault(("ebc10_humidity_lo", ()), []).append(
+                    (float(data["lo"]), ts_ms))
+            if data.get("hi") is not None:
+                series.setdefault(("ebc10_humidity_hi", ()), []).append(
+                    (float(data["hi"]), ts_ms))
+
+        elif rtype == "start":
+            series.setdefault(("ebc10_device_running", ()), []).append((1.0, ts_ms))
+
+        elif rtype == "stop":
+            series.setdefault(("ebc10_device_running", ()), []).append((0.0, ts_ms))
 
     ts_list = []
     for (metric_name, extra_labels), samples in series.items():
