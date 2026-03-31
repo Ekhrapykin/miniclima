@@ -31,6 +31,7 @@ def main():
     sub.add_parser(Cmd.DUMP,         help="Dump full history log (ASCII hex)")
     sub.add_parser(Cmd.START,        help="Start the unit")
     sub.add_parser(Cmd.STOP,         help="Stop the unit")
+    sub.add_parser(Cmd.QUERY,        help="Query full status dump")
 
     p = sub.add_parser(Cmd.SET_SP,       help="Set humidity setpoint (%%)")
     p.add_argument("value", type=int)
@@ -82,7 +83,10 @@ def main():
                 print(f"{c.read_ophours()} hours")
 
             case Cmd.DUMP:
-                print(c.dump())
+                print(c.clean_dump())
+
+            case Cmd.QUERY:
+                print(c.query())
 
             case Cmd.SET_SP:
                 print("OK" if c.set_setpoint(args.value) else "FAIL")

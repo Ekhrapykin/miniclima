@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [logDraft, setLogDraft] = useState("");
+  const [importState, setImportState] = useState<{ loading: boolean; ok?: boolean; msg?: string } | null>(null);
 
   const spInitRef = useRef(false);
   useEffect(() => {
@@ -108,6 +109,28 @@ export default function Dashboard() {
   const isRunning = vals.state === "running";
   const isStandby = vals.state === "standby";
 
+  const importHistory = async () => {
+    setImportState({ loading: true });
+    try {
+      const r = await fetch(`${API}/dump/import`, { method: "POST" });
+      const json = await r.json();
+      const typesSummary = json.types
+        ? Object.entries(json.types as Record<string, number>)
+            .map(([t, n]) => `${n}×${t}`)
+            .join(", ")
+        : "";
+      setImportState({
+        loading: false,
+        ok: r.ok,
+        msg: r.ok
+          ? `Pushed ${json.pushed} series (${typesSummary})`
+          : `Error ${r.status}`,
+      });
+    } catch {
+      setImportState({ loading: false, ok: false, msg: "Connection error" });
+    }
+  };
+
   const stepSp = (delta: number) => {
     const current = spDraft !== "" ? parseInt(spDraft) || sp : sp;
     setSpDraft(String(Math.max(0, Math.min(99, current + delta))));
@@ -149,6 +172,8 @@ export default function Dashboard() {
         logDraft={logDraft}
         setLogDraft={setLogDraft}
         onPost={post}
+        importState={importState}
+        onImport={importHistory}
       />
 
       <AppFooter

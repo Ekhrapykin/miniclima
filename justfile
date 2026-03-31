@@ -46,6 +46,7 @@ docker-api:
         -p {{api_port}}:8000 \
         -e EBC10_PORT={{port}} \
         -e CORS_ORIGINS={{cors_origins}} \
+        -e PROMETHEUS_URL={{prometheus_url}} \
         --name ebc10-api \
         miniclima-api
 
@@ -67,8 +68,7 @@ docker-up:
 docker-down:
     docker compose down
 
-docker-restart: docker-down docker-build docker-up
-    docker compose ps
+docker-restart: docker-build docker-down docker-up docker-ps
 
 # Show running containers
 docker-ps:

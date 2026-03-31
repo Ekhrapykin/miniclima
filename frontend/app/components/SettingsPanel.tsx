@@ -1,12 +1,22 @@
+interface ImportState {
+  loading: boolean;
+  ok?: boolean;
+  msg?: string;
+}
+
 interface SettingsPanelProps {
   open: boolean;
   busy: boolean;
   logDraft: string;
   setLogDraft: (v: string) => void;
   onPost: (path: string, body?: object) => void;
+  importState: ImportState | null;
+  onImport: () => void;
 }
 
-export default function SettingsPanel({ open, busy, logDraft, setLogDraft, onPost }: SettingsPanelProps) {
+export default function SettingsPanel({
+  open, busy, logDraft, setLogDraft, onPost, importState, onImport,
+}: SettingsPanelProps) {
   if (!open) return null;
 
   return (
@@ -33,6 +43,25 @@ export default function SettingsPanel({ open, busy, logDraft, setLogDraft, onPos
         >
           Apply
         </button>
+      </div>
+
+      <div className="settings-row">
+        <span className="ctrl-label">HISTORY</span>
+        <button
+          className="btn"
+          disabled={importState?.loading ?? false}
+          onClick={onImport}
+        >
+          {importState?.loading ? "Importing…" : "Import to Prometheus"}
+        </button>
+        {importState && !importState.loading && (
+          <span
+            className="ctrl-label"
+            style={{ color: importState.ok ? "var(--green)" : "var(--red)" }}
+          >
+            {importState.msg}
+          </span>
+        )}
       </div>
     </div>
   );
