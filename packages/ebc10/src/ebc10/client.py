@@ -162,30 +162,6 @@ class Client:
     def keepalive(self):
         self._send(b"\r")
 
-    def query(self):
-        raw = self._cmd("q")
-        return raw
-        # result = {"raw": raw, "state": "unknown"}
-        # try:
-        #     parts = raw.split()
-        #     if raw.startswith("Stand"):
-        #         result["state"] = "standby"
-        #         offset = 2  # "Stand by" occupies two tokens
-        #     elif raw.startswith("Running"):
-        #         result["state"] = "running"
-        #         offset = 1
-        #     else:
-        #         offset = None
-        #     if offset is not None and len(parts) > offset + 3:
-        #         result["rh"] = int(parts[offset])
-        #         result["t"] = int(parts[offset + 1])
-        #         result["t1"] = int(parts[offset + 2].lstrip("+"))
-        #         result["t2"] = int(parts[offset + 3].lstrip("+"))
-        #         result["flag"] = parts[offset + 5] if len(parts) > offset + 5 else ""
-        # except (IndexError, ValueError) as e:
-        #     log.debug(f"vals parse error: {e}  raw={raw!r}")
-        # return result
-
     # --- write commands ------------------------------------------------------
 
     def set_log_time(self, minutes: int) -> bool:

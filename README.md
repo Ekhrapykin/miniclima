@@ -185,7 +185,7 @@ Field breakdown:
   │       │    │               │   │    │    │    │    │    └─ Hyst. (0.1-0.4, %)
   │       │    │               │   │    │    │    │    └────── rH corr (signed %)
   │       │    │               │   │    │    │    └─────────── Log interval (minutes)
-  │       │    │               │   │    │    └──────────────── Hysteresis (% RH)
+  │       │    │               │   │    │    └──────────────── Alarm Code (e.g 01D, 04D)
   │       │    │               │   │    └───────────────────── AlarmMax (% RH)
   │       │    │               │   └────────────────────────── AlarmMin (% RH)
   │       │    │               └────────────────────────────── Setpoint (% RH)
@@ -373,7 +373,7 @@ The EBC10 history log does NOT use fixed blocks. It uses a tightly packed stream
 
 * **Periodic Measurements — 4 Bytes**
 
-    `<RH> <YY> <T1> <T2>`
+    `<RH> <T> <T1> <T2>`
     
     Measurements have no `F`-prefix. Because readings never exceed 100 (`0x64`), they never collide with the `F0`-`FF` control bytes. `T1` and `T2` values > 127 are negative (subtract 256)
 

@@ -16,4 +16,3 @@ class Cmd(str, Enum):
     SET_TIME     = "set-time"
     START        = "start"
     STOP         = "stop"
-    QUERY        = "query"

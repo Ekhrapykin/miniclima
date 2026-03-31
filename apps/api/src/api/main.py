@@ -135,8 +135,8 @@ async def dump():
 async def dump_import():
     """Retrieve full history dump, parse records, and push to Prometheus as historical samples."""
     async with conn._lock:
-        hex_data = await asyncio.to_thread(lambda: conn.ensure_connected().dump())
-    records = parse_dump_records(hex_data)
+        hex_str = await asyncio.to_thread(lambda: conn.ensure_connected().clean_dump())
+    records = parse_dump_records(bytearray.fromhex(hex_str))
     log.debug(f"records: {records}")
     pushed = await asyncio.to_thread(push_records_to_prometheus, records)
     type_counts: dict[str, int] = {}
