@@ -6,6 +6,7 @@ import logging
 import os
 import struct
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 import snappy
 from fastapi.responses import Response
@@ -14,6 +15,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_late
 log = logging.getLogger("api")
 
 PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus:9090") + "/api/v1/write"
+CUTOFF_DAYS = os.getenv("CUTOFF_DAYS", "60")
 
 # --- Gauges / Counters ---
 m_humidity    = Gauge("ebc10_humidity_percent",    "Relative humidity reading (%RH)")
@@ -86,11 +88,17 @@ def push_records_to_prometheus(records: list[dict]) -> int:
     """Build remote write payload from dump records and POST to Prometheus.
     Returns number of distinct time series pushed.
     """
+    log.debug("Pushing %d records to Prometheus", len(records))
     series: dict[tuple, list[tuple[float, int]]] = {}
 
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CUTOFF_DAYS)
     for r in records:
         if r["ts"] is None:
             continue
+        if r["ts"] < cutoff:
+            log.debug(f"skipping old record: {r}")
+            continue
+
         ts_ms = int(r["ts"].timestamp() * 1000)
         rtype = r["type"]
         data = r.get("data") or {}
@@ -156,7 +164,7 @@ def push_records_to_prometheus(records: list[dict]) -> int:
             if resp.status not in (200, 204):
                 log.warning("remote write returned %s", resp.status)
     except Exception as e:
-        log.warning("remote write failed: %s", e)
+        log.warning(f"remote write failed: {e}")
         return 0
 
     return len(ts_list)
