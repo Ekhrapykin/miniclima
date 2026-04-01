@@ -351,6 +351,19 @@ RX: yes\r\n<data>!\r\n     <- data stream terminated by !
 ```
 The data stream is **ASCII hex text**: each flash memory byte is encoded as two ASCII hex characters (e.g., `FB` in the stream = byte `0xFB`). Empty (erased) slots appear as `FF`.
 
+**Empty flash padding.** The EBC transmits the *entire* flash contents — valid records followed by all remaining erased bytes — before sending `!`. On a lightly used device, valid data may occupy only ~6 KB while the device streams 60+ KB of `FF` padding, costing roughly 2 minutes of serial read time at 9600 baud.
+
+`dump()` mitigates this by stopping early on the first even-aligned `FF` pair, since `0xFF` is the unambiguous end-of-data marker in the record format. `clean_dump()` applies the same trim as a post-processing safety net (useful for replaying saved captures).
+
+**Trade-off.** The early-exit heuristic checks `data[-2:] == b"FF"` at even alignment after each 256-byte chunk. Edge case: a valid measurement record whose last two hex chars happen to be `FF` (e.g. T = −1 = `0xFF`) and which lands exactly at a chunk boundary would cause a premature stop. In practice this is rare and the worst outcome is a truncated dump — `parse_dump_records` handles partial streams gracefully. The `clean_dump` post-processing strips any residual FF tail in either case.
+
+**Serial buffer pollution.** Early exit leaves the remaining FF stream unread in the OS serial buffer. Without cleanup, the next command (e.g. `sernum`) reads that garbage instead of its real response. Two options were considered:
+
+- *Synchronous drain* — loop reading until `!` before returning. Correct, but costs the same ~2 min the early exit was trying to avoid.
+- *Background drain* (implemented) — `dump()` returns data immediately; a background asyncio task acquires the serial lock and drains to `!` while the HTTP response is already on its way to the client. Measured improvement: ~25 s response vs ~2.3 min with synchronous drain.
+
+To prevent the poll loop from reading garbage between early exit and the drain task acquiring the lock, `_draining = True` is set **inside the lock** before `dump_import` releases it. The poll loop checks this flag and skips its serial read for that cycle. The drain task clears the flag in a `finally` block once `!` is received or the connection times out.
+
 **Record Format (Variable Length)**
 
 The EBC10 history log does NOT use fixed blocks. It uses a tightly packed stream where bytes `0xF0`–`0xFF` act as absolute synchronization markers. Records are distinguished by their first byte.

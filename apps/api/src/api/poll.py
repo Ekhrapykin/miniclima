@@ -19,8 +19,13 @@ POLL_INTERVAL = int(os.getenv("EBC10_POLL_INTERVAL", "5"))
 async def poll_loop():
     while True:
         try:
+            data = None
             async with conn._lock:
-                data = await asyncio.to_thread(conn.read_status)
+                if not conn._draining:
+                    data = await asyncio.to_thread(conn.read_status)
+            if data is None:
+                await asyncio.sleep(POLL_INTERVAL)
+                continue
             conn._latest = data
             update_live_metrics(data)
             msg = json.dumps(data)

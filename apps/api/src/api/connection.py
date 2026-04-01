@@ -27,6 +27,7 @@ _lock: asyncio.Lock
 _client: Client | None = None
 _ws_clients: set[WebSocket] = set()
 _latest: dict = {}
+_draining: bool = False  # True while dump serial drain runs in background
 
 
 def ensure_connected() -> Client:

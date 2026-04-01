@@ -91,7 +91,7 @@ def push_records_to_prometheus(records: list[dict]) -> int:
     log.debug("Pushing %d records to Prometheus", len(records))
     series: dict[tuple, list[tuple[float, int]]] = {}
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=CUTOFF_DAYS)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=float(CUTOFF_DAYS))
     for r in records:
         if r["ts"] is None:
             continue

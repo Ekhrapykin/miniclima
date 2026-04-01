@@ -230,6 +230,16 @@ class Client:
                 break
         return data
 
+    def drain_to_terminator(self) -> None:
+        """Read and discard serial bytes until the ! terminator or timeout.
+        Called after an early-exit dump() to clean the input buffer before
+        the next command.
+        """
+        while True:
+            chunk = self._ser.read(256)
+            if not chunk or b"!" in chunk:
+                break
+
     def clean_dump(self) -> str:
         """
         Retrieve full history log.

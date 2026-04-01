@@ -136,13 +136,25 @@ async def dump_import():
     """Retrieve full history dump, parse records, and push to Prometheus as historical samples."""
     async with conn._lock:
         hex_str = await asyncio.to_thread(lambda: conn.ensure_connected().clean_dump())
+        conn._draining = True  # set before releasing lock so poll skips its next cycle
     records = parse_dump_records(bytearray.fromhex(hex_str))
     log.debug(f"records: {records}")
     pushed = await asyncio.to_thread(push_records_to_prometheus, records)
     type_counts: dict[str, int] = {}
     for r in records:
         type_counts[r["type"]] = type_counts.get(r["type"], 0) + 1
+    asyncio.create_task(_drain_after_dump())
     return {"total": len(records), "pushed": pushed, "types": type_counts}
+
+
+async def _drain_after_dump():
+    async with conn._lock:
+        try:
+            await asyncio.to_thread(conn.ensure_connected().drain_to_terminator)
+        except Exception as e:
+            log.warning("background drain failed: %s", e)
+        finally:
+            conn._draining = False
 
 
 # --- write endpoints ---
