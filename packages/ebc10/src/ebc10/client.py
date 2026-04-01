@@ -4,6 +4,7 @@ miniClima EBC10 — RS232 ASCII protocol client.
 """
 
 import logging
+import re
 import serial
 from ebc10.utils import encode_nibbles
 
@@ -207,6 +208,7 @@ class Client:
             return bytearray()
         self._send(b"yes\r")
         data = bytearray()
+        hex_start = None
         while True:
             chunk = self._ser.read(256)
             if not chunk:
@@ -214,12 +216,25 @@ class Client:
             data += chunk
             if b"!" in chunk:
                 break
+            # Locate hex stream start once (after yes\r[n] echo)
+            if hex_start is None:
+                if data.startswith(b"yes\r\n"):
+                    hex_start = 5
+                elif data.startswith(b"yes\r"):
+                    hex_start = 4
+                else:
+                    hex_start = 0
+            # Stop early on first even-aligned FF pair (= empty flash boundary)
+            hex_len = len(data) - hex_start
+            if hex_len >= 2 and hex_len % 2 == 0 and data[-2:] == b"FF":
+                break
         return data
 
     def clean_dump(self) -> str:
         """
         Retrieve full history log.
-        Returns raw ASCII hex string (each byte = 2 hex chars, no spaces).
+        Returns raw ASCII hex string (each byte = 2 hex chars, no spaces),
+        with trailing empty flash (FF bytes) stripped.
         """
         raw = self.dump().decode("ascii", errors="replace").rstrip("!\r\n")
 
@@ -228,4 +243,10 @@ class Client:
             raw = raw[5:]
         elif raw.startswith("yes\r"):
             raw = raw[4:]
+
+        # Remove any non-hex chars (serial noise), strip trailing FF pairs (empty flash),
+        # then drop any orphaned trailing nibble so the string is always even-length.
+        raw = re.sub(r"[^0-9a-fA-F]", "", raw)
+        raw = re.sub(r"(?:[Ff]{2})+$", "", raw)
+        raw = raw[: len(raw) & ~1]
         return raw
