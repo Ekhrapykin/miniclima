@@ -51,7 +51,6 @@ class Client:
         self._send((cmd + "\r").encode("ascii"))
         for _ in range(_MAX_READ_LINES):
             line = self._readline()
-            print(line)
             if not line or line == cmd:
                 continue
             return line

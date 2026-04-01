@@ -129,6 +129,18 @@ def push_records_to_prometheus(records: list[dict]) -> int:
         elif rtype == "stop":
             series.setdefault(("ebc10_device_running", ()), []).append((0.0, ts_ms))
 
+        elif rtype == "pump_start":
+            series.setdefault(("ebc10_pump_running", ()), []).append((1.0, ts_ms))
+
+        elif rtype == "pump_stop":
+            series.setdefault(("ebc10_pump_running", ()), []).append((0.0, ts_ms))
+
+        elif rtype == "alarm":
+            series.setdefault(("ebc10_alarm_event", ()), []).append((1.0, ts_ms))
+
+        elif rtype == "error":
+            series.setdefault(("ebc10_error_event", ()), []).append((1.0, ts_ms))
+
     ts_list = []
     for (metric_name, extra_labels), samples in series.items():
         if not samples:
