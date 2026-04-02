@@ -540,8 +540,10 @@ Pushed immediately after a successful `#setPoint` write.
 1. **Frontend import loader** — add visual feedback (spinner/disabled state) to the dump import button
 2. **Alarm events over polling** — investigate how/whether alarm events (F9) appear in the regular poll cycle vs. only in history dump
 3. **Frontend label/value validation** — verify that metric labels and values from WebSocket match the poll response structure
-4. **Write command validation** — live-test `setPoint`, `start`, `stop`, and other write commands against the device
+4. **Write command validation** — live-test `setPoint`, `SetAlarmMin`, `SetAlarmMax`, and other write commands against the device
 5. **Frontend design** — isolate settings panel, increase base font sizes
 6. **Settings comparison** — diff dump settings snapshots against live settings to detect drift
 7. **Grafana reports review** — audit whether current panels cover all needed signals; add or remove as needed
 8. **Retention period**
+9. **Embed grafana to web interface**
+10. **hardware** - need to calculate for device, need to adjust power consumption, power supply
