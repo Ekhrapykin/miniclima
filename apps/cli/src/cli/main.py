@@ -82,7 +82,7 @@ def main():
                 print(f"{c.read_ophours()} hours")
 
             case Cmd.DUMP:
-                print(c.dump())
+                print(c.clean_dump())
 
             case Cmd.SET_SP:
                 print("OK" if c.set_setpoint(args.value) else "FAIL")

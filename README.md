@@ -51,6 +51,8 @@ curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 sudo usermod -aG docker $USER
 sudo apt install -y docker-compose-plugin
+
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ## Usage
@@ -87,7 +89,7 @@ Add `-v` for verbose serial debug output.
 | frontend   | 3000         | http://ben.local:3000   |
 | api        | 8000         | http://ben.local:8000   |
 | prometheus | 9090         | http://ben.local:9090   |
-| grafana    | 3001         | http://ben.local:3001   |
+| grafana    | 3002         | http://ben.local:3002   |
 
 Ports are configurable via `.env` (`API_PORT`, `FRONTEND_PORT`, `PROMETHEUS_PORT`, `GRAFANA_PORT`).
 
@@ -114,6 +116,8 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=ttyACM0
 ```
 
 **Grafana first run:** Add a Prometheus data source with URL `http://prometheus:9090`. The EBC10 dashboard will auto-provision.
+
+**Debug serial traffic:** Set `LOG_LEVEL=DEBUG` in `.env` to see raw ebc10 serial exchange in container logs (`docker compose logs -f api`).
 
 ---
 
@@ -178,10 +182,10 @@ Field breakdown:
 ```
 #004537  M    170908.04   Set:55  40   70   02   15   -05  04
   │       │    │               │   │    │    │    │    │    │
-  │       │    │               │   │    │    │    │    │    └─ Unknown (correlates with HY: HY=1→02, HY=2→04)
-  │       │    │               │   │    │    │    │    └────── Temperature offset (signed °C)
+  │       │    │               │   │    │    │    │    │    └─ Hyst. (0.1-0.4, %)
+  │       │    │               │   │    │    │    │    └────── rH corr (signed %)
   │       │    │               │   │    │    │    └─────────── Log interval (minutes)
-  │       │    │               │   │    │    └──────────────── Hysteresis (% RH)
+  │       │    │               │   │    │    └──────────────── Alarm Code (e.g 01D, 04D)
   │       │    │               │   │    └───────────────────── AlarmMax (% RH)
   │       │    │               │   └────────────────────────── AlarmMin (% RH)
   │       │    │               └────────────────────────────── Setpoint (% RH)
@@ -224,10 +228,10 @@ Running  67    27    +06   +36   00   p
   │       │     │     │     │    │    │
   │       │     │     │     │    │    └─ Flag: 'p' (Peltier active), '*' (sensor error), empty (ok)
   │       │     │     │     │    └────── Unknown (always 00 in captures)
-  │       │     │     │     └─────────── Temperature sensor 2 (hot side, °C)
-  │       │     │     └───────────────── Temperature sensor 1 (cold side, °C)
-  │       │     └─────────────────────── Unknown field (26–28 range, possibly dewpoint or 2nd RH sensor)
-  │       └───────────────────────────── Humidity reading (%, possibly case RH)
+  │       │     │     │     └─────────── Temperature inner sensor 2 (hot side, °C)
+  │       │     │     └───────────────── Temperature inner sensor 1 (cold side, °C)
+  │       │     └─────────────────────── Temperature outer sensor (°C)
+  │       └───────────────────────────── Humidity outer sensor (%, possibly case RH)
   └─────────────────────────────────────── Device state: "Running" or "Stand by"
 ```
 
@@ -238,13 +242,6 @@ Note: `T1` = cold side (probe inside cabinet), `T2` = hot side (EBC unit heat si
 TX: ophours\r
 RX: 000004\r\n       (6-digit decimal, total operating hours)
 ```
-
-#### `q` — Full status dump
-```
-TX: q\r
-RX: <multi-line block: date, time, sernum, current readings>
-```
-Full response format not cleanly captured yet.
 
 #### `#setPoints+NNN` — Setpoint query and write attempt
 
@@ -352,18 +349,103 @@ RX: dump\r\nreally?\r\n    <- echo + confirmation prompt
 TX: yes\r
 RX: yes\r\n<data>!\r\n     <- data stream terminated by !
 ```
-The data stream is **ASCII hex text**: each flash memory byte is encoded as two ASCII hex characters (e.g., `FB` in the stream = byte `0xFB`). Empty (erased) slots appear as `FF`. The dump covers the entire history flash — on a unit with 4 operating hours the stream ran for ~2 minutes at 9600 baud.
+The data stream is **ASCII hex text**: each flash memory byte is encoded as two ASCII hex characters (e.g., `FB` in the stream = byte `0xFB`). Empty (erased) slots appear as `FF`.
 
-**Partial record format** (16 bytes per record, 32 hex chars):
+**Empty flash padding.** The EBC transmits the *entire* flash contents — valid records followed by all remaining erased bytes — before sending `!`. On a lightly used device, valid data may occupy only ~6 KB while the device streams 60+ KB of `FF` padding, costing roughly 2 minutes of serial read time at 9600 baud.
+
+`dump()` mitigates this by stopping early on the first even-aligned `FF` pair, since `0xFF` is the unambiguous end-of-data marker in the record format. `clean_dump()` applies the same trim as a post-processing safety net (useful for replaying saved captures).
+
+**Trade-off.** The early-exit heuristic checks `data[-2:] == b"FF"` at even alignment after each 256-byte chunk. Edge case: a valid measurement record whose last two hex chars happen to be `FF` (e.g. T = −1 = `0xFF`) and which lands exactly at a chunk boundary would cause a premature stop. In practice this is rare and the worst outcome is a truncated dump — `parse_dump_records` handles partial streams gracefully. The `clean_dump` post-processing strips any residual FF tail in either case.
+
+**Serial buffer pollution.** Early exit leaves the remaining FF stream unread in the OS serial buffer. Without cleanup, the next command (e.g. `sernum`) reads that garbage instead of its real response. Two options were considered:
+
+- *Synchronous drain* — loop reading until `!` before returning. Correct, but costs the same ~2 min the early exit was trying to avoid.
+- *Background drain* (implemented) — `dump()` returns data immediately; a background asyncio task acquires the serial lock and drains to `!` while the HTTP response is already on its way to the client. Measured improvement: ~25 s response vs ~2.3 min with synchronous drain.
+
+To prevent the poll loop from reading garbage between early exit and the drain task acquiring the lock, `_draining = True` is set **inside the lock** before `dump_import` releases it. The poll loop checks this flag and skips its serial read for that cycle. The drain task clears the flag in a `finally` block once `!` is received or the connection times out.
+
+**Record Format (Variable Length)**
+
+The EBC10 history log does NOT use fixed blocks. It uses a tightly packed stream where bytes `0xF0`–`0xFF` act as absolute synchronization markers. Records are distinguished by their first byte.
+
+Timestamps are BCD encoded: `26 03 31 17 00` = 2026-03-31 17:00.
+
+#### Record type table
+
+| First byte | Name | Total size | Layout |
+|---|---|---|---|
+| `0x00`–`0xEF` | **Measurement** | 4 bytes | `[RH, T, T1, T2]` |
+| `F0` | **Log marker** | 6 bytes | `[F0, YY, MM, DD, HH, MM]` |
+| `F1` | **First record** | 6 bytes | `[F1, YY, MM, DD, HH, MM]` — once only, oldest entry |
+| `F4` | **Pump stop** | 7 bytes | `[F4, 00, YY, MM, DD, HH, MM]` |
+| `F5` | **Pump start** | 7 bytes | `[F5, 04, YY, MM, DD, HH, MM]` |
+| `F9` | **Alarm event** | 7 bytes | `[F9, 00, YY, MM, DD, HH, MM]` |
+| `FA` | **Start** | 6 bytes | `[FA, YY, MM, DD, HH, MM]` |
+| `FB` | **Settings snapshot** | 10 bytes | `[FB, SP, LO, HI, HY, TO, ??, pad, LT, pad]` |
+| `FD` | **Stop** | 6 bytes | `[FD, YY, MM, DD, HH, MM]` |
+| `FE` | **Error** | 6 bytes | `[FE, YY, MM, DD, HH, MM]` |
+| `FF` | **Empty flash** | — | End of valid data; stream stops here |
+
+#### Measurement record fields
+
 ```
-<TYPE> <YY> <MM> <DD> <HH> <MM> <10 bytes settings/measurement>
-  1B     1B   1B   1B   1B   1B
+RH   T    T1   T2
+│    │    │    │
+│    │    │    └─ Inner sensor 2 — hot side of Peltier (°C, signed)
+│    │    └────── Inner sensor 1 — cold side / probe (°C, signed)
+│    └─────────── Outer temperature sensor (°C, signed) — independent of T1/T2
+└──────────────── Relative humidity, outer sensor (%)
 ```
-- All bytes are BCD-encoded
-- `TYPE` byte: `FA` = Start/event, `FD`/`FE` = other events, `F1`/`FB` = data records
-- Timestamp: YY MM DD HH MM (e.g. `26 03 26 10 33` = 26.03.2026 10:33)
-- Data bytes: settings snapshot (SP LO HI HY LT TO ??) packed as raw bytes
-- Full record encoding not yet fully decoded — needs dedicated analysis session
+
+Values > 127 are negative (interpret as signed byte, i.e. subtract 256).
+
+#### Settings snapshot (`FB`) fields
+
+```
+SP   LO   HI   HY   TO   ??   pad  LT   pad
+│    │    │    │    │                │
+│    │    │    │    │                └─ Log interval (minutes)
+│    │    │    │    └────────────────── rH correction offset (°C, 0x80 bit = negative, e.g. 0x85 = -5)
+│    │    │    └─────────────────────── Hysteresis (%)
+│    │    └──────────────────────────── Alarm max (% RH)
+│    └───────────────────────────────── Alarm min (% RH)
+└────────────────────────────────────── Setpoint (% RH)
+```
+
+All fields are plain hex (not BCD).
+
+#### Known event sequences
+
+**Start sequence** — always `FA` immediately followed by `FB`:
+```
+FA [timestamp]
+FB [settings]
+```
+
+**Stop sequence** — `FD` + settings + optional measurements:
+```
+FD [timestamp]
+FB [settings]
+[meas] ...
+```
+
+**Alarm triplet** — appears after every stop; all three share the same timestamp:
+```
+F9 00 [timestamp]   ← alarm triggered
+F0    [timestamp]   ← logged
+FE    [timestamp]   ← error flagged
+```
+
+**Pump cycle** — `F5`/`F4` alternate; measurements only appear after `F4` (pump-off):
+```
+F5 04 [timestamp]   ← pump on
+F4 00 [timestamp]   ← pump off
+[meas] ...          ← readings taken after pump stops
+```
+
+**F1** appears only once as the absolute first record in the flash, marking device first power-on or first use. Not seen in subsequent log rolls.
+
+`POST /dump/import` API endpoint retrieves full dump, parses records, pushes to Prometheus as historical samples via remote write.
 
 #### AlarmMin / AlarmMax / Hysteresis / Temperature offset writes
 **Status: NOT YET DECODED.** Write attempts during session 5 failed due to severe communication noise — no clean TX packet was captured. Need a stable sniffing session dedicated to changing these parameters.
@@ -423,35 +505,43 @@ Pushed immediately after a successful `#setPoint` write.
 | AlarmMin / AlarmMax write command | Not captured |
 | Hysteresis write command | Not captured |
 | Temperature offset write command | Not captured |
-| `vals` fields XX, YY — exact meaning | Partially understood (humidity-related) |
-| `q\r` full response format | Partially seen, needs clean capture |
-| History dump record format — full decode | Command known, 16-byte record structure partially identified |
-| Last field in `sernum` (`04`) | Correlates with HY but meaning unclear |
+| `F4`/`F5` sub-byte meaning | Sub-bytes observed: `F5`=`04`, `F4`=`00`; likely pump index or mode — not confirmed |
+| `F0` exact semantics | Always follows `F9` in the alarm triplet; meaning of the distinction unclear |
+| Alarm triplet vs real error | `F9`+`F0`+`FE` fires after every stop — unclear if it signals an actual fault or is a normal stop log entry |
 | `#setPoints+NNN` write form — effect confirmed? | Variants +000/+050/+111/+222/+444/+555/-555 seen; NNN likely = target SP in 3-digit decimal; whether it actually writes SP needs live test |
 
 ---
 
 ## File Overview
 
-| Path | Purpose |
-|---|---|
-| `packages/ebc10/` | `Client` class — protocol library (pyserial) |
-| `apps/api/` | FastAPI + WebSocket server; persistent serial connection; `/metrics` for Prometheus |
-| `apps/cli/` | `ebc10` CLI entry point |
-| `frontend/` | Next.js dashboard; WebSocket client with exponential backoff reconnect |
-| `tools/logger.py` | Passive listener — logs pushed data to CSV |
-| `tools/relay.py` | Windows COM-port relay for protocol sniffing |
-| `Dockerfile` | API image (python:3.13-slim, ARM-compatible) |
-| `frontend/Dockerfile` | Frontend image (node:22-slim, ARM-compatible) |
-| `docker-compose.yml` | Full stack: api, frontend, prometheus, grafana |
-| `prometheus/prometheus.yml` | Scrape config targeting `api:8000/metrics` |
-| `grafana/dashboards/` | Provisioned EBC10 dashboard (humidity, temp, setpoint, errors) |
-| `justfile` | Task runner — `just --list` for all recipes |
+| Path | Purpose                                                                                                |
+|---|--------------------------------------------------------------------------------------------------------|
+| `packages/ebc10/` | `Client` class — protocol library (pyserial), `utils.py` - used for parse_dump_records, encode_nibbles |
+| `apps/api/` | FastAPI server split into: `main.py` (routes), `connection.py` (serial), `prometheus.py` (metrics + remote write), `poll.py` (background loop) |
+| `apps/cli/` | `ebc10` CLI entry point                                                                                |
+| `frontend/` | Next.js dashboard; WebSocket client with exponential backoff reconnect                                 |
+| `tools/logger.py` | Passive listener — logs pushed data to CSV                                                             |
+| `tools/relay.py` | Windows COM-port relay for protocol sniffing                                                           |
+| `Dockerfile` | API image (python:3.13-slim, ARM-compatible)                                                           |
+| `frontend/Dockerfile` | Frontend image (node:22-slim, ARM-compatible)                                                          |
+| `docker-compose.yml` | Full stack: api, frontend, prometheus, grafana                                                         |
+| `prometheus/prometheus.yml` | Scrape config targeting `api:8000/metrics`                                                             |
+| `grafana/dashboards/` | Provisioned EBC10 dashboard (humidity, temp, setpoint, errors)                                         |
+| `justfile` | Task runner — `just --list` for all recipes                                                            |
 
 ## Device Info (unit on hand)
 
 - Serial: `#004537`
 - Model: `M` (EBC10)
 - Firmware: `170908.04` (2017-09-08 rev 4)
-- Settings at last capture: SP=50%, LO=39%, HI=69%, HY=2, LT=1min, TO=-5°C
-- Operating hours at last capture: 4 hours
+
+## What's next?
+
+1. **Frontend import loader** — add visual feedback (spinner/disabled state) to the dump import button
+2. **Alarm events over polling** — investigate how/whether alarm events (F9) appear in the regular poll cycle vs. only in history dump
+3. **Frontend label/value validation** — verify that metric labels and values from WebSocket match the poll response structure
+4. **Write command validation** — live-test `setPoint`, `start`, `stop`, and other write commands against the device
+5. **Frontend design** — isolate settings panel, increase base font sizes
+6. **Settings comparison** — diff dump settings snapshots against live settings to detect drift
+7. **Grafana reports review** — audit whether current panels cover all needed signals; add or remove as needed
+8. **Retention period**

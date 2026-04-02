@@ -23,6 +23,16 @@
           "expr": "ebc10_setpoint_percent",
           "legendFormat": "Setpoint",
           "refId": "B"
+        },
+        {
+          "expr": "ebc10_humidity_lo",
+          "legendFormat": "Alarm Min",
+          "refId": "C"
+        },
+        {
+          "expr": "ebc10_humidity_hi",
+          "legendFormat": "Alarm Max",
+          "refId": "D"
         }
       ],
       "fieldConfig": {
@@ -39,6 +49,22 @@
               { "id": "custom.lineStyle", "value": { "dash": [8, 4], "fill": "dash" } },
               { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
             ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Alarm Min" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } },
+              { "id": "custom.lineWidth", "value": 1 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Alarm Max" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } },
+              { "id": "custom.lineWidth", "value": 1 }
+            ]
           }
         ]
       },
@@ -50,7 +76,7 @@
       "id": 2,
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "ebc10_humidity_percent", "refId": "A" }
+        { "expr": "ebc10_humidity_percent{job=\"ebc10-api\"}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -74,7 +100,7 @@
       "id": 3,
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "ebc10_device_running", "refId": "A" }
+        { "expr": "ebc10_device_running{job=\"ebc10-api\"}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
@@ -107,7 +133,7 @@
       "id": 5,
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "expr": "ebc10_setpoint_percent", "refId": "A" }
+        { "expr": "ebc10_setpoint_percent{job=\"ebc10-api\"}", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": { "unit": "percent" }
@@ -122,10 +148,20 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "expr": "ebc10_temperature_celsius{sensor=\"t1\"}", "legendFormat": "T1 (cold side)", "refId": "A" },
-        { "expr": "ebc10_temperature_celsius{sensor=\"t2\"}", "legendFormat": "T2 (hot side)", "refId": "B" }
+        { "expr": "ebc10_temperature_celsius{sensor=\"t2\"}", "legendFormat": "T2 (hot side)", "refId": "B" },
+        { "expr": "ebc10_temperature_celsius{sensor=\"t_out\"}", "legendFormat": "T Outer", "refId": "C" }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "celsius", "custom": { "lineWidth": 2 } }
+        "defaults": { "unit": "celsius", "custom": { "lineWidth": 2 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "T Outer" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [6, 3], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "light-purple" } }
+            ]
+          }
+        ]
       },
       "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
     },
@@ -145,6 +181,71 @@
         }
       },
       "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pump Activity",
+      "id": 8,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "ebc10_pump_running", "legendFormat": "Pump", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "lineInterpolation": "stepAfter"
+          },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Off" }, "1": { "text": "On" } } }
+          ],
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        }
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Events (Alarm / Error)",
+      "id": 9,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "ebc10_alarm_event", "legendFormat": "Alarm", "refId": "A" },
+        { "expr": "ebc10_error_event", "legendFormat": "Error", "refId": "B" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "lineWidth": 0,
+            "pointSize": 10,
+            "showPoints": "always",
+            "fillOpacity": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Alarm" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Error" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 }
     }
   ]
 }

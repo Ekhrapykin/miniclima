@@ -9,6 +9,8 @@ Config via env vars:
     EBC10_BAUD          (default: 9600)
     EBC10_POLL_INTERVAL (default: 5, seconds between device polls)
     CORS_ORIGINS        (default: *, comma-separated list of allowed origins)
+    PROMETHEUS_URL      (default: http://prometheus:9090)
+    LOG_LEVEL           (default: INFO — set DEBUG to see ebc10 serial traffic)
 """
 
 import asyncio
@@ -19,127 +21,28 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
-from ebc10 import Client
+import api.connection as conn
+from api.poll import poll_loop
+from api.prometheus import metrics_response, push_records_to_prometheus
+from ebc10.utils import parse_dump_records
 
-# --- Prometheus metrics ---
-_m_humidity = Gauge("ebc10_humidity_percent", "Relative humidity reading (%RH)")
-_m_temp = Gauge("ebc10_temperature_celsius", "Temperature (°C)", ["sensor"])
-_m_sp = Gauge("ebc10_setpoint_percent", "Humidity setpoint (%RH)")
-_m_ophours = Gauge("ebc10_operating_hours", "Operating hours")
-_m_running = Gauge("ebc10_device_running", "1 if device is running, 0 if standby")
-_m_poll_errors = Counter("ebc10_poll_errors_total", "Total number of poll errors")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 log = logging.getLogger("api")
-
-PORT = os.getenv("EBC10_PORT", "/dev/ttyACM0")
-BAUD = int(os.getenv("EBC10_BAUD", "9600"))
-POLL_INTERVAL = int(os.getenv("EBC10_POLL_INTERVAL", "5"))
-
-# --- shared state (initialised in lifespan) ---
-_lock: asyncio.Lock
-_client: Client | None = None
-_ws_clients: set[WebSocket] = set()
-_latest: dict = {}
-
-
-# --- blocking serial helpers (run via to_thread while holding _lock) ---
-
-def _ensure_connected() -> Client:
-    """Open serial connection if needed. Must be called under _lock."""
-    global _client
-    if _client is not None and _client._ser.is_open:
-        return _client
-    if _client is not None:
-        try:
-            _client.close()
-        except Exception:
-            pass
-    _client = Client(PORT, BAUD)
-    log.info("connected to %s", PORT)
-    return _client
-
-
-def _close_client():
-    global _client
-    if _client is not None:
-        try:
-            _client.close()
-        except Exception:
-            pass
-        _client = None
-
-
-def _read_status() -> dict:
-    c = _ensure_connected()
-    return {
-        "sernum": c.read_sernum(),
-        "vals": c.read_vals(),
-        "ophours": c.read_ophours(),
-    }
-
-
-def _exec_write(method: str, *args) -> bool:
-    c = _ensure_connected()
-    return getattr(c, method)(*args)
-
-
-# --- background poll + broadcast ---
-
-async def _poll_loop():
-    global _latest
-    while True:
-        try:
-            async with _lock:
-                data = await asyncio.to_thread(_read_status)
-            _latest = data
-            # update Prometheus metrics
-            vals = data.get("vals", {})
-            sernum = data.get("sernum", {})
-            if vals.get("rh") is not None:
-                _m_humidity.set(vals["rh"])
-            if vals.get("t1") is not None:
-                _m_temp.labels(sensor="t1").set(vals["t1"])
-            if vals.get("t2") is not None:
-                _m_temp.labels(sensor="t2").set(vals["t2"])
-            if sernum.get("sp") is not None:
-                _m_sp.set(sernum["sp"])
-            if data.get("ophours") is not None:
-                _m_ophours.set(data["ophours"])
-            _m_running.set(1 if vals.get("state") == "running" else 0)
-            msg = json.dumps(data)
-            dead = []
-            for ws in _ws_clients:
-                try:
-                    await ws.send_text(msg)
-                except Exception:
-                    dead.append(ws)
-            for ws in dead:
-                _ws_clients.discard(ws)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            log.warning("poll error: %s", e)
-            _m_poll_errors.inc()
-            _close_client()
-            await asyncio.sleep(10)
-            continue
-        await asyncio.sleep(POLL_INTERVAL)
 
 
 # --- app lifespan ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _lock
-    _lock = asyncio.Lock()
-    task = asyncio.create_task(_poll_loop())
+    logging.getLogger("ebc10").setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    conn._lock = asyncio.Lock()
+    task = asyncio.create_task(poll_loop())
     yield
     task.cancel()
-    _close_client()
+    conn.close_client()
 
 
 app = FastAPI(title="miniClima EBC10 API", lifespan=lifespan)
@@ -157,82 +60,108 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
-    _ws_clients.add(ws)
-    if _latest:
-        await ws.send_text(json.dumps(_latest))
+    conn._ws_clients.add(ws)
+    if conn._latest:
+        await ws.send_text(json.dumps(conn._latest))
     try:
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        _ws_clients.discard(ws)
+        conn._ws_clients.discard(ws)
 
 
 # --- Prometheus scrape endpoint ---
 
 @app.get("/metrics")
 async def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    return metrics_response()
 
 
 # --- read endpoints (return cached _latest when available) ---
 
 @app.get("/status")
 async def status():
-    if _latest:
-        return _latest
-    async with _lock:
-        return await asyncio.to_thread(_read_status)
+    if conn._latest:
+        return conn._latest
+    async with conn._lock:
+        return await asyncio.to_thread(conn.read_status)
 
 
 @app.get("/vals")
 async def vals():
-    if _latest and "vals" in _latest:
-        return _latest["vals"]
-    async with _lock:
-        return await asyncio.to_thread(lambda: _ensure_connected().read_vals())
+    if conn._latest and "vals" in conn._latest:
+        return conn._latest["vals"]
+    async with conn._lock:
+        return await asyncio.to_thread(lambda: conn.ensure_connected().read_vals())
 
 
 @app.get("/sernum")
 async def sernum():
-    if _latest and "sernum" in _latest:
-        return _latest["sernum"]
-    async with _lock:
-        return await asyncio.to_thread(lambda: _ensure_connected().read_sernum())
+    if conn._latest and "sernum" in conn._latest:
+        return conn._latest["sernum"]
+    async with conn._lock:
+        return await asyncio.to_thread(lambda: conn.ensure_connected().read_sernum())
 
 
 @app.get("/date")
 async def date():
-    async with _lock:
-        return {"date": await asyncio.to_thread(lambda: _ensure_connected().read_date())}
+    async with conn._lock:
+        return {"date": await asyncio.to_thread(lambda: conn.ensure_connected().read_date())}
 
 
 @app.get("/time")
 async def time_():
-    async with _lock:
-        return {"time": await asyncio.to_thread(lambda: _ensure_connected().read_time())}
+    async with conn._lock:
+        return {"time": await asyncio.to_thread(lambda: conn.ensure_connected().read_time())}
 
 
 @app.get("/ophours")
 async def ophours():
-    if _latest and "ophours" in _latest:
-        return {"ophours": _latest["ophours"]}
-    async with _lock:
-        return {"ophours": await asyncio.to_thread(lambda: _ensure_connected().read_ophours())}
+    if conn._latest and "ophours" in conn._latest:
+        return {"ophours": conn._latest["ophours"]}
+    async with conn._lock:
+        return {"ophours": await asyncio.to_thread(lambda: conn.ensure_connected().read_ophours())}
 
 
 @app.get("/dump")
 async def dump():
-    async with _lock:
-        return {"data": await asyncio.to_thread(lambda: _ensure_connected().dump())}
+    async with conn._lock:
+        return {"data": await asyncio.to_thread(lambda: conn.ensure_connected().dump())}
+
+
+@app.post("/dump/import")
+async def dump_import():
+    """Retrieve full history dump, parse records, and push to Prometheus as historical samples."""
+    async with conn._lock:
+        hex_str = await asyncio.to_thread(lambda: conn.ensure_connected().clean_dump())
+        conn._draining = True  # set before releasing lock so poll skips its next cycle
+    records = parse_dump_records(bytearray.fromhex(hex_str))
+    log.debug(f"records: {records}")
+    pushed = await asyncio.to_thread(push_records_to_prometheus, records)
+    type_counts: dict[str, int] = {}
+    for r in records:
+        type_counts[r["type"]] = type_counts.get(r["type"], 0) + 1
+    asyncio.create_task(_drain_after_dump())
+    return {"total": len(records), "pushed": pushed, "types": type_counts}
+
+
+async def _drain_after_dump():
+    async with conn._lock:
+        try:
+            await asyncio.to_thread(conn.ensure_connected().drain_to_terminator)
+        except Exception as e:
+            log.warning("background drain failed: %s", e)
+        finally:
+            conn._draining = False
 
 
 # --- write endpoints ---
 
 async def _write(method: str, *args) -> bool:
-    async with _lock:
-        return await asyncio.to_thread(_exec_write, method, *args)
+    async with conn._lock:
+        return await asyncio.to_thread(conn.exec_write, method, *args)
 
 
 @app.post("/start")

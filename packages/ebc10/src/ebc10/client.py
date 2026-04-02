@@ -4,32 +4,12 @@ miniClima EBC10 — RS232 ASCII protocol client.
 """
 
 import logging
-
+import re
 import serial
+from ebc10.utils import encode_nibbles
 
 log = logging.getLogger("ebc10")
-
 _MAX_READ_LINES = 4  # max lines to scan before giving up on a response
-
-
-def encode_nibbles(value: str) -> bytes:
-    """
-    Encode a string of digits (and '.' / ':') for EBC write payload.
-    Each decimal digit → its raw value (0x01 for '1', not ASCII 0x31).
-    Separator chars '.' and ':' are sent as-is (0x2E, 0x3A).
-    Terminated with CR (0x0D).
-
-    Examples:
-        "15"       → b'\\x01\\x05\\x0d'
-        "26.03.26" → b'\\x02\\x06\\x2e\\x00\\x03\\x2e\\x02\\x06\\x0d'
-        "14:54"    → b'\\x01\\x04\\x3a\\x05\\x04\\x0d'
-    """
-    out = bytearray()
-    for ch in value:
-        out.append(int(ch) if ch.isdigit() else ord(ch))
-    out.append(0x0D)
-    return bytes(out)
-
 
 class Client:
     READ_TIMEOUT = 2.0
@@ -114,15 +94,15 @@ class Client:
 
     def read_sernum(self) -> dict:
         """
-        Returns dict: serial, model, firmware, sp, lo, hi, hy, lt, to, xx
+        Returns dict: serial, model, firmware, sp, lo, hi, hy, lt, to, hy
         Raw format: #004537 M 170908.04 Set:55 40 70 02 15 -05 04
         """
         raw = self._cmd("sernum")
         result = {"raw": raw}
         try:
             parts = raw.split()
-            result["serial"]   = parts[0]
-            result["model"]    = parts[1]
+            result["serial"] = parts[0]
+            result["model"] = parts[1]
             result["firmware"] = parts[2]
             if "Set:" in raw:
                 sp_parts = raw.split("Set:")[1].split()
@@ -133,15 +113,14 @@ class Client:
                     result["hy"] = int(sp_parts[3])
                     result["lt"] = int(sp_parts[4])
                     result["to"] = int(sp_parts[5])
-                if len(sp_parts) >= 7:
-                    result["xx"] = sp_parts[6]
+                    result["hy"] = int(sp_parts[6]) # todo value should be decimal, not int, e.g. 04 -> 0.4
         except (IndexError, ValueError) as e:
             log.debug(f"sernum parse error: {e}  raw={raw!r}")
         return result
 
     def read_vals(self) -> dict:
         """
-        Returns dict: state, rh, unknown, t1, t2, flag.
+        Returns dict: state, rh, t, t1, t2, flag.
         Both Running and Stand by states include sensor readings.
         Raw format: "Running  67  27  +06  +36  00  p"
                  or "Stand by 70  26  +24  +24  00"
@@ -160,7 +139,7 @@ class Client:
                 offset = None
             if offset is not None and len(parts) > offset + 3:
                 result["rh"]      = int(parts[offset])
-                result["unknown"] = int(parts[offset + 1])
+                result["t"]       = int(parts[offset + 1])
                 result["t1"]      = int(parts[offset + 2].lstrip("+"))
                 result["t2"]      = int(parts[offset + 3].lstrip("+"))
                 result["flag"]    = parts[offset + 5] if len(parts) > offset + 5 else ""
@@ -214,10 +193,10 @@ class Client:
     def stop(self) -> bool:
         return self._echo_cmd("stop")
 
-    def dump(self) -> str:
+    def dump(self) -> bytearray:
         """
         Retrieve full history log.
-        Returns raw ASCII hex string (each byte = 2 hex chars, no spaces).
+        Returns raw bytearray as is
         """
         self._flush_input()
         self._send(b"dump\r")
@@ -226,9 +205,10 @@ class Client:
                 break
         else:
             log.warning("dump: no 'really?' prompt received")
-            return ""
+            return bytearray()
         self._send(b"yes\r")
         data = bytearray()
+        hex_start = None
         while True:
             chunk = self._ser.read(256)
             if not chunk:
@@ -236,4 +216,47 @@ class Client:
             data += chunk
             if b"!" in chunk:
                 break
-        return data.decode("ascii", errors="replace").rstrip("!\r\n")
+            # Locate hex stream start once (after yes\r[n] echo)
+            if hex_start is None:
+                if data.startswith(b"yes\r\n"):
+                    hex_start = 5
+                elif data.startswith(b"yes\r"):
+                    hex_start = 4
+                else:
+                    hex_start = 0
+            # Stop early on first even-aligned FF pair (= empty flash boundary)
+            hex_len = len(data) - hex_start
+            if hex_len >= 2 and hex_len % 2 == 0 and data[-2:] == b"FF":
+                break
+        return data
+
+    def drain_to_terminator(self) -> None:
+        """Read and discard serial bytes until the ! terminator or timeout.
+        Called after an early-exit dump() to clean the input buffer before
+        the next command.
+        """
+        while True:
+            chunk = self._ser.read(256)
+            if not chunk or b"!" in chunk:
+                break
+
+    def clean_dump(self) -> str:
+        """
+        Retrieve full history log.
+        Returns raw ASCII hex string (each byte = 2 hex chars, no spaces),
+        with trailing empty flash (FF bytes) stripped.
+        """
+        raw = self.dump().decode("ascii", errors="replace").rstrip("!\r\n")
+
+        # Strip "yes\r\n" or "yes\r" echo that prefixes the hex stream
+        if raw.startswith("yes\r\n"):
+            raw = raw[5:]
+        elif raw.startswith("yes\r"):
+            raw = raw[4:]
+
+        # Remove any non-hex chars (serial noise), strip trailing FF pairs (empty flash),
+        # then drop any orphaned trailing nibble so the string is always even-length.
+        raw = re.sub(r"[^0-9a-fA-F]", "", raw)
+        raw = re.sub(r"(?:[Ff]{2})+$", "", raw)
+        raw = raw[: len(raw) & ~1]
+        return raw

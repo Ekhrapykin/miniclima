@@ -1,0 +1,68 @@
+FA2603311210 FB322745028502000104
+FA2603311215 FB322745028504000104
+FA2603311215 FB322745028504000104
+FA2603311351 FB322745028504000104
+FA2603311352 FB322745048504000104
+FA2603311352 FB322745038504000104
+FA2603311700 FB322745038504000104
+FA2603311700 FB322745038504000104
+
+FD2603311702 FB3227450385040001044A1A18194A1A1819
+F5042603311703
+F4002603311703 491A071E
+F5042603311703
+F4002603311703 491A0121491A0023491A0024
+F5042603311707 491A0025
+F4002603311707 491A0125491A0125491A0125491A0125491A0125491A0126
+FE2603311714
+
+FD2603311802 FB322745038504000104481A191B481A131C481A0621481A0223
+FE2603311804
+
+Now I have the full picture. Let me decode it manually — the file is already split/formatted as notes, not raw hex.
+
+Key observations before decoding:
+
+F4 and F5 are not in the parser yet — but they follow the F9 extended-event format (7 bytes: [TYPE, sub, YY, MM, DD, HH, MM]), not the standard 6-byte format
+The bottom comments in utils.py give context: "17.12 bottle alarm", "pumping", "17.18 stop pumping"
+Decoded events (2026-03-31)
+Line	Raw	Decoded
+1	FA 26 03 31 12 10	Start @ 12:10
+FB 32 27 45 02 85 02 00 01 04	Settings: SP=50% LO=39% HI=69% HY=2% TO=-5°C LT=1min
+2	FA 26 03 31 12 15	Start @ 12:15
+FB 32 27 45 02 85 04 00 01 04	Settings: SP=50% LO=39% HI=69% HY=2% TO=-5°C LT=1min
+3	FA 26 03 31 12 15	Start @ 12:15 (duplicate)
+same FB	same settings
+4	FA 26 03 31 13 51	Start @ 13:51
+same FB	same settings
+5	FA 26 03 31 13 52	Start @ 13:52
+FB 32 27 45 04 85 04 00 01 04	Settings: HY changed → 4%
+6	FA 26 03 31 13 52	Start @ 13:52 (same minute)
+FB 32 27 45 03 85 04 00 01 04	Settings: HY changed → 3%
+7	FA 26 03 31 17 00	Start @ 17:00
+FB 32 27 45 03 85 04 00 01 04	Settings: SP=50% HY=3% TO=-5°C LT=1min
+8	FA 26 03 31 17 00	Start @ 17:00 (duplicate)
+9	FD 26 03 31 17 02	Stop @ 17:02
+FB 32 27 45 03 85 04 00 01 04	Settings snapshot at stop
+4A 1A 18 19	Meas: RH=74% T1=+24°C T2=+25°C
+4A 1A 18 19	Meas: RH=74% T1=+24°C T2=+25°C
+10	F5 04 26 03 31 17 03	Unknown F5 (sub=04) @ 17:03 ← new type, not in parser
+11	F4 00 26 03 31 17 03	Unknown F4 (sub=00) @ 17:03 ← new type
+49 1A 07 1E	Meas: RH=73% T1=+7°C T2=+30°C
+12	F5 04 26 03 31 17 03	F5 (sub=04) @ 17:03
+13	F4 00 26 03 31 17 03	F4 (sub=00) @ 17:03
+49 1A 01 21	Meas: RH=73% T1=+1°C T2=+33°C
+49 1A 00 23	Meas: RH=73% T1=0°C T2=+35°C
+49 1A 00 24	Meas: RH=73% T1=0°C T2=+36°C
+14	F5 04 26 03 31 17 07	F5 (sub=04) @ 17:07
+49 1A 00 25	Meas: RH=73% T1=0°C T2=+37°C
+15	F4 00 26 03 31 17 07	F4 (sub=00) @ 17:07
+49 1A 01 25 ×5	Meas: RH=73% T1=+1°C T2=+37°C
+49 1A 01 26	Meas: RH=73% T1=+1°C T2=+38°C
+16	FE 26 03 31 17 14	Error (Signal Error) @ 17:14
+What happened
+Multiple rapid Start events at 12:10–13:52 suggest someone was tuning — HY went 2% → 4% → 3% while testing.
+
+At 17:00 the unit ran again, stopped at 17:02 with RH=74% (way above SP=50%). Then F4/F5 events fired at 17:03 and 17:07 — cross-referenced with the notes at the bottom of utils.py, these align with pump cycles ("pumping" / "stop pumping"). T1 sensor dropped from 24°C → 0°C during pumping (cold water evaporation), T2 climbed to 38°C. At 17:14 a Signal Error (FE) fired — matching the "bottle alarm" note.
+
+F4/F5 hypothesis: F5=pump start, F4=pump stop (sub-byte may encode pump index or mode). Both need to be added to parse_dump_records as 7-byte extended events alongside F9.
