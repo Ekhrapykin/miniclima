@@ -25,12 +25,12 @@
           "refId": "B"
         },
         {
-          "expr": "ebc10_humidity_lo",
+          "expr": "ebc10_humidity_min",
           "legendFormat": "Alarm Min",
           "refId": "C"
         },
         {
-          "expr": "ebc10_humidity_hi",
+          "expr": "ebc10_humidity_max",
           "legendFormat": "Alarm Max",
           "refId": "D"
         },

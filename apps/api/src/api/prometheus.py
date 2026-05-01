@@ -117,10 +117,10 @@ def push_records_to_prometheus(records: list[dict]) -> int:
                 series.setdefault(("ebc10_setpoint_percent", ()), []).append(
                     (float(data["sp"]), ts_ms))
             if data.get("lo") is not None:
-                series.setdefault(("ebc10_humidity_lo", ()), []).append(
+                series.setdefault(("ebc10_humidity_min", ()), []).append(
                     (float(data["lo"]), ts_ms))
             if data.get("hi") is not None:
-                series.setdefault(("ebc10_humidity_hi", ()), []).append(
+                series.setdefault(("ebc10_humidity_max", ()), []).append(
                     (float(data["hi"]), ts_ms))
 
         elif rtype == "start":

@@ -180,73 +180,52 @@ async def stop():
     return {"ok": True}
 
 
-class SetpointRequest(BaseModel):
-    rh_percent: int
+class SetValRequest(BaseModel):
+    val: int
 
 
 @app.post("/setpoint")
-async def setpoint(req: SetpointRequest):
-    ok = await _write("set_setpoint", req.rh_percent)
+async def setpoint(req: SetValRequest):
+    ok = await _write("set_setpoint", req.val)
     if not ok:
         raise HTTPException(status_code=502, detail="set_setpoint command failed")
     return {"ok": True}
 
 
-class SetLogTimeRequest(BaseModel):
-    minutes: int
-
-
 @app.post("/log-time")
-async def set_log_time(req: SetLogTimeRequest):
-    ok = await _write("set_log_time", req.minutes)
+async def set_log_time(req: SetValRequest):
+    ok = await _write("set_log_time", req.val)
     if not ok:
         raise HTTPException(status_code=502, detail="set_log_time command failed")
     return {"ok": True}
 
 
-class SetAlarmLoRequest(BaseModel):
-    lo: int
-
-
 @app.post("/alarm-min")
-async def set_alarm_min(req: SetAlarmLoRequest):
-    ok = await _write("set_alarm_min", req.lo)
+async def set_alarm_min(req: SetValRequest):
+    ok = await _write("set_alarm_min", req.val)
     if not ok:
         raise HTTPException(status_code=502, detail="set_alarm_min command failed")
     return {"ok": True}
 
-
-class SetAlarmHiRequest(BaseModel):
-    hi: int
-
-
 @app.post("/alarm-max")
-async def set_alarm_max(req: SetAlarmHiRequest):
-    ok = await _write("set_alarm_max", req.hi)
+async def set_alarm_max(req: SetValRequest):
+    ok = await _write("set_alarm_max", req.val)
     if not ok:
         raise HTTPException(status_code=502, detail="set_alarm_max command failed")
     return {"ok": True}
 
 
-class SetHysteresisRequest(BaseModel):
-    hy: int
-
-
 @app.post("/hysteresis")
-async def set_hysteresis(req: SetHysteresisRequest):
-    ok = await _write("set_hysteresis", req.hy)
+async def set_hysteresis(req: SetValRequest):
+    ok = await _write("set_hysteresis", req.val)
     if not ok:
         raise HTTPException(status_code=502, detail="set_hysteresis command failed")
     return {"ok": True}
 
 
-class SetRhCorrRequest(BaseModel):
-    rhc: int
-
-
 @app.post("/rhcorr")
-async def set_rhcorr(req: SetRhCorrRequest):
-    ok = await _write("set_rhcorr", req.to)
+async def set_rhcorr(req: SetValRequest):
+    ok = await _write("set_rhcorr", req.val)
     if not ok:
         raise HTTPException(status_code=502, detail="set_rhcorr command failed")
     return {"ok": True}
