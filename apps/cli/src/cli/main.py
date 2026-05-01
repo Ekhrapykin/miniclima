@@ -62,7 +62,7 @@ def main():
                       f"LT={s.get('lt', '?')}min  TO={s.get('to', '?')}")
                 print(f"State:    {v.get('state', '?')}")
                 if "rh" in v:
-                    print(f"Sensor:   RH={v.get('rh', '?')}%  "
+                    print(f"Sensor:   RH={v.get('rh', '?')}%  T={v.get('t', '?')}°C  "
                           f"T1={v.get('t1', '?')}°C  T2={v.get('t2', '?')}°C  "
                           f"flag={v.get('flag') or 'none'}")
 

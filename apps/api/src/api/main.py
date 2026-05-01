@@ -196,7 +196,7 @@ class SetLogTimeRequest(BaseModel):
     minutes: int
 
 
-@app.post("/set-log-time")
+@app.post("/log-time")
 async def set_log_time(req: SetLogTimeRequest):
     ok = await _write("set_log_time", req.minutes)
     if not ok:
@@ -204,11 +204,59 @@ async def set_log_time(req: SetLogTimeRequest):
     return {"ok": True}
 
 
+class SetAlarmLoRequest(BaseModel):
+    lo: int
+
+
+@app.post("/alarm-min")
+async def set_alarm_min(req: SetAlarmLoRequest):
+    ok = await _write("set_alarm_min", req.lo)
+    if not ok:
+        raise HTTPException(status_code=502, detail="set_alarm_min command failed")
+    return {"ok": True}
+
+
+class SetAlarmHiRequest(BaseModel):
+    hi: int
+
+
+@app.post("/alarm-max")
+async def set_alarm_max(req: SetAlarmHiRequest):
+    ok = await _write("set_alarm_max", req.hi)
+    if not ok:
+        raise HTTPException(status_code=502, detail="set_alarm_max command failed")
+    return {"ok": True}
+
+
+class SetHysteresisRequest(BaseModel):
+    hy: int
+
+
+@app.post("/hysteresis")
+async def set_hysteresis(req: SetHysteresisRequest):
+    ok = await _write("set_hysteresis", req.hy)
+    if not ok:
+        raise HTTPException(status_code=502, detail="set_hysteresis command failed")
+    return {"ok": True}
+
+
+class SetRhCorrRequest(BaseModel):
+    rhc: int
+
+
+@app.post("/rhcorr")
+async def set_rhcorr(req: SetRhCorrRequest):
+    ok = await _write("set_rhcorr", req.to)
+    if not ok:
+        raise HTTPException(status_code=502, detail="set_rhcorr command failed")
+    return {"ok": True}
+
+
 class SetDateRequest(BaseModel):
     date: str  # DD.MM.YY
 
 
-@app.post("/set-date")
+@app.post("/date")
 async def set_date(req: SetDateRequest):
     ok = await _write("set_date", req.date)
     if not ok:
@@ -220,7 +268,7 @@ class SetTimeRequest(BaseModel):
     time: str  # HH:MM
 
 
-@app.post("/set-time")
+@app.post("/time")
 async def set_time(req: SetTimeRequest):
     ok = await _write("set_time", req.time)
     if not ok:

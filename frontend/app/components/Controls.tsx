@@ -1,81 +1,59 @@
+interface ImportState {
+  loading: boolean;
+  ok?: boolean;
+  msg?: string;
+}
+
 interface ControlsProps {
   busy: boolean;
   isRunning: boolean;
   isStandby: boolean;
-  spDraft: string;
-  setSpDraft: (v: string) => void;
-  settingsOpen: boolean;
-  setSettingsOpen: (fn: (v: boolean) => boolean) => void;
   onPost: (path: string, body?: object) => void;
-  stepSp: (delta: number) => void;
+  onOpenSettings: () => void;
+  importState: ImportState | null;
+  onImport: () => void;
 }
 
 export default function Controls({
   busy, isRunning, isStandby,
-  spDraft, setSpDraft,
-  settingsOpen, setSettingsOpen,
-  onPost, stepSp,
+  onPost, onOpenSettings,
+  importState, onImport,
 }: ControlsProps) {
+  const toggleLabel = isRunning ? "■ Stop" : "▶ Start";
+  const toggleAction = isRunning ? "/stop" : "/start";
+  const unknownState = !isRunning && !isStandby;
+
   return (
     <div className="controls-bar">
       <button
         className={`btn${isRunning ? " btn-running" : ""}`}
-        disabled={busy || isRunning}
-        onClick={() => onPost("/start")}
+        disabled={busy || unknownState}
+        onClick={() => onPost(toggleAction)}
       >
-        ▶ Start
-      </button>
-      <button
-        className="btn"
-        disabled={busy || isStandby}
-        onClick={() => onPost("/stop")}
-      >
-        ■ Stop
+        {toggleLabel}
       </button>
 
-      <div className="controls-divider" />
-
-      <span className="ctrl-label">SET SP</span>
-      <button
-        className="btn amber btn-narrow"
-        disabled={busy}
-        onClick={() => stepSp(-1)}
-      >
-        −
-      </button>
-      <input
-        type="number"
-        min={0}
-        max={99}
-        value={spDraft}
-        onChange={(e) => setSpDraft(e.target.value)}
-        className="sp-input"
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && spDraft)
-            onPost("/setpoint", { rh_percent: parseInt(spDraft) });
-        }}
-      />
-      <button
-        className="btn amber btn-narrow"
-        disabled={busy}
-        onClick={() => stepSp(1)}
-      >
-        +
-      </button>
-      <span className="ctrl-unit">%</span>
-      <button
-        className="btn amber"
-        disabled={busy || !spDraft}
-        onClick={() => onPost("/setpoint", { rh_percent: parseInt(spDraft) })}
-      >
-        Apply
+      <button className="btn" onClick={onOpenSettings}>
+        ⚙ Settings
       </button>
 
       <div className="controls-spacer" />
 
-      <button className="btn" onClick={() => setSettingsOpen((v) => !v)}>
-        ⚙ Settings {settingsOpen ? "▴" : "▾"}
+      <button
+        className="btn"
+        disabled={importState?.loading ?? false}
+        onClick={onImport}
+      >
+        {importState?.loading ? "Importing…" : "Import to Prometheus"}
       </button>
+      {importState && !importState.loading && (
+        <span
+          className="ctrl-label"
+          style={{ color: importState.ok ? "var(--green, #00e8a2)" : "var(--err)" }}
+        >
+          {importState.msg}
+        </span>
+      )}
     </div>
   );
 }

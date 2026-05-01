@@ -9,17 +9,18 @@ interface ReadingsGridProps {
 
 export default function ReadingsGrid({ vals, sernum, ophours }: ReadingsGridProps) {
   const sign = (n: number) => (n > 0 ? "+" : "");
-
+  const getval = (val: number | null | undefined, uom: string) => val != null ? `${val}${uom}` : "--"
   return (
     <div className="readings-panel">
-      <Cell label="T1 cold side" value={vals.t1 != null ? `${vals.t1}°C` : "--"} />
-      <Cell label="T2 hot side"  value={vals.t2 != null ? `${vals.t2}°C` : "--"} />
-      <Cell label="Setpoint"     value={sernum.sp != null ? `${sernum.sp}%` : "--"} amber />
-      <Cell label="Hysteresis"   value={sernum.hy != null ? `×${sernum.hy}` : "--"} amber />
-      <Cell label="Alarm Lo"     value={sernum.lo != null ? `${sernum.lo}%` : "--"} dim />
-      <Cell label="Alarm Hi"     value={sernum.hi != null ? `${sernum.hi}%` : "--"} dim />
-      <Cell label="Log interval" value={sernum.lt != null ? `${sernum.lt} min` : "--"} dim />
-      <Cell label="Temp offset"  value={sernum.to != null ? `${sign(sernum.to)}${sernum.to}°C` : "--"} dim />
+      <Cell label="Ambient" value={getval(vals.t, '°C')} />
+      <Cell label="T1 cold side" value={getval(vals.t1,'°C')} />
+      <Cell label="T2 hot side"  value={getval(vals.t2,'°C')} />
+      <Cell label="Setpoint"     value={getval(sernum.sp, '%')} amber />
+      <Cell label="Hysteresis"   value={getval(sernum.hy, '%')} amber />
+      <Cell label="Alarm Lo"     value={getval(sernum.lo, '%')} dim />
+      <Cell label="Alarm Hi"     value={getval(sernum.hi, '%')} dim />
+      <Cell label="Log interval" value={getval(sernum.lt, ' min')} dim />
+      <Cell label="RH Corr"  value={sernum.rhc != null ? `${sign(sernum.rhc)}${sernum.rhc}%` : "--"} dim />
       <div className="cell cell-full">
         <span className="cell-label">Operating hours</span>
         <span className="cell-val dim ophours-val">

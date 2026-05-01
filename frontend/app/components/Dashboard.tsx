@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { Sernum, Vals } from "../types";
 import AppHeader from "./AppHeader";
 import AppFooter from "./AppFooter";
 import Controls from "./Controls";
+import GrafanaPanel from "./GrafanaPanel";
 import HumidityGauge from "./HumidityGauge";
 import LoadingOverlay from "./LoadingOverlay";
 import ReadingsGrid from "./ReadingsGrid";
-import SettingsPanel from "./SettingsPanel";
+import SettingsModal from "./SettingsModal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -19,28 +20,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [connErr, setConnErr] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [spDraft, setSpDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [logDraft, setLogDraft] = useState("");
   const [importState, setImportState] = useState<{ loading: boolean; ok?: boolean; msg?: string } | null>(null);
-
-  const spInitRef = useRef(false);
-  useEffect(() => {
-    if (!spInitRef.current && sernum.sp != null) {
-      setSpDraft(String(sernum.sp));
-      spInitRef.current = true;
-    }
-  }, [sernum.sp]);
-
-  const ltInitRef = useRef(false);
-  useEffect(() => {
-    if (!ltInitRef.current && sernum.lt != null) {
-      setLogDraft(String(sernum.lt));
-      ltInitRef.current = true;
-    }
-  }, [sernum.lt]);
 
   const showFlash = (ok: boolean, msg: string) => {
     setFlash({ ok, msg });
@@ -131,11 +114,6 @@ export default function Dashboard() {
     }
   };
 
-  const stepSp = (delta: number) => {
-    const current = spDraft !== "" ? parseInt(spDraft) || sp : sp;
-    setSpDraft(String(Math.max(0, Math.min(99, current + delta))));
-  };
-
   return (
     <div className="dashboard">
       {loading && <LoadingOverlay />}
@@ -150,30 +128,29 @@ export default function Dashboard() {
       />
 
       <main className="main-grid">
-        <HumidityGauge rh={rh} sp={sp} loading={loading} flag={vals.flag} />
-        <ReadingsGrid vals={vals} sernum={sernum} ophours={ophours} />
+        <HumidityGauge rh={rh} sp={sp} loading={loading} flag={vals.flag} t={vals.t} />
+        <div className="right-column">
+          <ReadingsGrid vals={vals} sernum={sernum} ophours={ophours} />
+          <GrafanaPanel />
+        </div>
       </main>
 
       <Controls
         busy={busy}
         isRunning={isRunning}
         isStandby={isStandby}
-        spDraft={spDraft}
-        setSpDraft={setSpDraft}
-        settingsOpen={settingsOpen}
-        setSettingsOpen={setSettingsOpen}
         onPost={post}
-        stepSp={stepSp}
-      />
-
-      <SettingsPanel
-        open={settingsOpen}
-        busy={busy}
-        logDraft={logDraft}
-        setLogDraft={setLogDraft}
-        onPost={post}
+        onOpenSettings={() => setSettingsOpen(true)}
         importState={importState}
         onImport={importHistory}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        busy={busy}
+        sernum={sernum}
+        onPost={post}
       />
 
       <AppFooter

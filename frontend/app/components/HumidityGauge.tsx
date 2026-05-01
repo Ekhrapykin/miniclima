@@ -23,9 +23,10 @@ interface HumidityGaugeProps {
   sp: number;
   loading: boolean;
   flag?: string;
+  t?: number;
 }
 
-export default function HumidityGauge({ rh, sp, loading, flag }: HumidityGaugeProps) {
+export default function HumidityGauge({ rh, sp, loading, flag, t }: HumidityGaugeProps) {
   const rhArc = (rh / 100) * ARC;
   const [spX1, spY1] = gaugePoint(sp, 71);
   const [spX2, spY2] = gaugePoint(sp, 93);
@@ -137,6 +138,11 @@ export default function HumidityGauge({ rh, sp, loading, flag }: HumidityGaugePr
       <div className="gauge-legend">
         <span className="gauge-legend-line" />
         <span className="gauge-legend-label">SETPOINT {sp}%</span>
+      </div>
+
+      <div className="gauge-temp">
+        <span className="gauge-temp-val">{loading ? "--" : (t != null ? `${t}°` : "--")}</span>
+        <span className="gauge-temp-label">Ambient</span>
       </div>
     </div>
   );

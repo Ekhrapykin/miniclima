@@ -113,7 +113,8 @@ class Client:
                     result["hy"] = int(sp_parts[3])
                     result["lt"] = int(sp_parts[4])
                     result["to"] = int(sp_parts[5])
-                    result["hy"] = int(sp_parts[6]) # todo value should be decimal, not int, e.g. 04 -> 0.4
+                    if len(sp_parts) > 6:
+                        result["unk7"] = sp_parts[6]
         except (IndexError, ValueError) as e:
             log.debug(f"sernum parse error: {e}  raw={raw!r}")
         return result
@@ -186,6 +187,26 @@ class Client:
         tens  = rh_percent // 10
         units = rh_percent % 10
         return self._write_cmd("#setPoint", raw_payload=bytes([0x00, 0x00, tens, units, 0x0D]))
+
+    def set_alarm_min(self, lo: int) -> bool:  # TODO: confirm command name — not yet tested live
+        if not 0 <= lo <= 99:
+            raise ValueError(f"alarm lo must be 0–99%, got {lo}")
+        return self._write_cmd("setAlarmMin", str(lo).zfill(2))
+
+    def set_alarm_max(self, hi: int) -> bool:  # TODO: confirm command name — not yet tested live
+        if not 0 <= hi <= 99:
+            raise ValueError(f"alarm hi must be 0–99%, got {hi}")
+        return self._write_cmd("setAlarmMax", str(hi).zfill(2))
+
+    def set_hysteresis(self, hy: int) -> bool:  # TODO: confirm command name — not yet tested live
+        if not 1 <= hy <= 10:
+            raise ValueError(f"hysteresis must be 1–10%, got {hy}")
+        return self._write_cmd("setHysteresis", str(hy).zfill(2))
+
+    def set_rhcorr(self, rhc: int) -> bool:  # TODO: confirm command name — not yet tested live
+        if not -5 <= rhc <= 5:
+            raise ValueError(f"RH correction must be -5–+5%, got {rhc}")
+        return self._write_cmd("setTempOffset", str(rhc).zfill(2))
 
     def start(self) -> bool:
         return self._echo_cmd("start")

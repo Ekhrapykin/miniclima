@@ -304,7 +304,31 @@ body::after {
   color: var(--tx-label);
 }
 
-/* ── readings panel (right) ──────────────────────────────────────────────── */
+/* ── gauge ambient temperature ──────────────────────────────────────────── */
+.gauge-temp {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.gauge-temp-val {
+  font-family: var(--font-mono, 'Share Tech Mono', monospace);
+  font-size: 28px;
+  color: var(--ph);
+}
+.gauge-temp-label {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--tx-label);
+  text-transform: uppercase;
+}
+
+/* ── right column (readings + grafana) ───────────────────────────────────── */
+.right-column {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── readings panel ─────────────────────────────────────────────────────── */
 .readings-panel {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -379,4 +403,78 @@ body::after {
   font-size: 10px;
   color: var(--tx-dim);
   letter-spacing: 0.1em;
+}
+
+/* ── grafana embed ──────────────────────────────────────────────────────── */
+.grafana-panel {
+  flex: 1;
+  min-height: 300px;
+  border-top: 1px solid var(--border);
+}
+.grafana-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--bg);
+}
+
+/* ── settings modal ─────────────────────────────────────────────────────── */
+.settings-modal {
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  color: var(--tx);
+  padding: 0;
+  max-width: 480px;
+  width: 90vw;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  margin: 0;
+}
+.settings-modal::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+.settings-modal-inner {
+  display: flex;
+  flex-direction: column;
+}
+.settings-modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tx-label);
+}
+.settings-modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-field-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx-label);
+  min-width: 140px;
+}
+.settings-field-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }

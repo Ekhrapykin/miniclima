@@ -51,6 +51,8 @@ services:
     environment:
       - GF_USERS_ALLOW_SIGN_UP=true
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ALLOW_EMBEDDING=true
     restart: unless-stopped
     networks:

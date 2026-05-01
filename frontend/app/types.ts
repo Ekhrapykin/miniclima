@@ -6,12 +6,13 @@ export interface Sernum {
   hi?: number;
   hy?: number;
   lt?: number;
-  to?: number;
+  rhc?: number;
 }
 
 export interface Vals {
   state?: string;
   rh?: number;
+  t?: number;
   t1?: number;
   t2?: number;
   flag?: string;
