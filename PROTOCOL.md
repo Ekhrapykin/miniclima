@@ -191,7 +191,7 @@ Note: this is `#setPoint` (no 's') — distinct from the read query `#setPoints+
 TX: #setPoint\x00\x00 SP1 SP2 0D    <- SP value nibble-encoded, \x00\x00 prefix (unknown purpose)
 RX: #*************\r\n              <- 13 asterisks ack
 RX: !\r\n                           <- success
-RX: DD.MM.YY HH:MM Set:SP LO HI HY LT TO ??\r\n  <- event push confirming new settings
+RX: DD.MM.YY HH:MM Set:SP LO HI HY LT RHC ??\r\n  <- event push confirming new settings
 ```
 
 **Confirmed examples:**
@@ -249,19 +249,19 @@ Timestamps are BCD encoded: `26 03 31 17 00` = 2026-03-31 17:00.
 
 #### Record type table
 
-| First byte | Name | Total size | Layout |
-|---|---|---|---|
-| `0x00`–`0xEF` | **Measurement** | 4 bytes | `[RH, T, T1, T2]` |
-| `F0` | **Log marker** | 6 bytes | `[F0, YY, MM, DD, HH, MM]` |
-| `F1` | **First record** | 6 bytes | `[F1, YY, MM, DD, HH, MM]` — once only, oldest entry |
-| `F4` | **Pump stop** | 7 bytes | `[F4, 00, YY, MM, DD, HH, MM]` |
-| `F5` | **Pump start** | 7 bytes | `[F5, 04, YY, MM, DD, HH, MM]` |
-| `F9` | **Alarm event** | 7 bytes | `[F9, 00, YY, MM, DD, HH, MM]` |
-| `FA` | **Start** | 6 bytes | `[FA, YY, MM, DD, HH, MM]` |
-| `FB` | **Settings snapshot** | 10 bytes | `[FB, SP, LO, HI, HY, TO, ??, pad, LT, pad]` |
-| `FD` | **Stop** | 6 bytes | `[FD, YY, MM, DD, HH, MM]` |
-| `FE` | **Error** | 6 bytes | `[FE, YY, MM, DD, HH, MM]` |
-| `FF` | **Empty flash** | — | End of valid data; stream stops here |
+| First byte    | Name                  | Total size | Layout                                               |
+|---------------|-----------------------|------------|------------------------------------------------------|
+| `0x00`–`0xEF` | **Measurement**       | 4 bytes    | `[RH, T, T1, T2]`                                    |
+| `F0`          | **Log marker**        | 6 bytes    | `[F0, YY, MM, DD, HH, MM]`                           |
+| `F1`          | **First record**      | 6 bytes    | `[F1, YY, MM, DD, HH, MM]` — once only, oldest entry |
+| `F4`          | **Pump stop**         | 7 bytes    | `[F4, 00, YY, MM, DD, HH, MM]`                       |
+| `F5`          | **Pump start**        | 7 bytes    | `[F5, 04, YY, MM, DD, HH, MM]`                       |
+| `F9`          | **Alarm event**       | 7 bytes    | `[F9, 00, YY, MM, DD, HH, MM]`                       |
+| `FA`          | **Start**             | 6 bytes    | `[FA, YY, MM, DD, HH, MM]`                           |
+| `FB`          | **Settings snapshot** | 10 bytes   | `[FB, SP, LO, HI, HY, RHC, ??, pad, LT, pad]`        |
+| `FD`          | **Stop**              | 6 bytes    | `[FD, YY, MM, DD, HH, MM]`                           |
+| `FE`          | **Error**             | 6 bytes    | `[FE, YY, MM, DD, HH, MM]`                           |
+| `FF`          | **Empty flash**       | —          | End of valid data; stream stops here                 |
 
 #### Measurement record fields
 
@@ -279,7 +279,7 @@ Values > 127 are negative (interpret as signed byte, i.e. subtract 256).
 #### Settings snapshot (`FB`) fields
 
 ```
-SP   LO   HI   HY   TO   ??   pad  LT   pad
+SP   LO   HI   HY   RHC  ??   pad  LT   pad
 │    │    │    │    │                │
 │    │    │    │    │                └─ Log interval (minutes)
 │    │    │    │    └────────────────── rH correction offset (°C, 0x80 bit = negative, e.g. 0x85 = -5)

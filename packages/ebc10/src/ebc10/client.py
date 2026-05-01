@@ -94,7 +94,7 @@ class Client:
 
     def read_sernum(self) -> dict:
         """
-        Returns dict: serial, model, firmware, sp, lo, hi, hy, lt, to, hy
+        Returns dict: serial, model, firmware, sp, lo, hi, hy, lt, rhc, hy
         Raw format: #004537 M 170908.04 Set:55 40 70 02 15 -05 04
         """
         raw = self._cmd("sernum")
@@ -112,7 +112,7 @@ class Client:
                     result["hi"] = int(sp_parts[2])
                     result["hy"] = int(sp_parts[3])
                     result["lt"] = int(sp_parts[4])
-                    result["to"] = int(sp_parts[5])
+                    result["rhc"] = int(sp_parts[5])
                     if len(sp_parts) > 6:
                         result["unk7"] = sp_parts[6]
         except (IndexError, ValueError) as e:
