@@ -16,7 +16,7 @@ TOOL_PORT   = "COM4"   # virtual port — miniClima Tool connects here
 DEVICE_PORT = "COM3"    # real EBC10 device
 BAUD        = 9600      # change to 19200 or 38400 if CSV looks garbled
 
-log_file = open("serial_capture.txt", "w", buffering=1)
+log_file = open(r"..\captures\serial_capture_0205_1.txt", "w", buffering=1)
 
 def log(direction: str, data: bytes):
     ts        = datetime.datetime.now().strftime("%H:%M:%S.%f")
