@@ -132,9 +132,9 @@ export default function ExportModal({ open, onClose }: ExportModalProps) {
   );
 }
 
-async function generateExcel(data: { period: string; step: string; metrics: Record<string, [number, number][]> }, period: string) {
-  const XLSX = await import("xlsx");
+type ExportPayload = { period: string; step: string; metrics: Record<string, [number, number][]> };
 
+function buildTable(data: ExportPayload) {
   const allTimestamps = new Set<number>();
   for (const values of Object.values(data.metrics)) {
     for (const [ts] of values) allTimestamps.add(ts);
@@ -147,46 +147,66 @@ async function generateExcel(data: { period: string; step: string; metrics: Reco
     for (const [ts, val] of values) m.set(ts, val);
     lookup[name] = m;
   }
+  return { sorted, lookup };
+}
+
+function isAlarm(lookup: Record<string, Map<number, number>>, ts: number): string {
+  const rh = lookup.humidity?.get(ts);
+  const lo = lookup.alarm_min?.get(ts);
+  const hi = lookup.alarm_max?.get(ts);
+  if (rh == null || (lo == null && hi == null)) return "";
+  if (hi != null && rh > hi) return "HIGH";
+  if (lo != null && rh < lo) return "LOW";
+  return "";
+}
+
+async function generateExcel(data: ExportPayload, period: string) {
+  const XLSX = await import("xlsx");
+  const { sorted, lookup } = buildTable(data);
 
   const metricKeys = Object.keys(METRIC_LABELS);
-  const header = ["Timestamp", ...metricKeys.map((k) => METRIC_LABELS[k])];
+  const header = ["Timestamp", ...metricKeys.map((k) => METRIC_LABELS[k]), "Alarm"];
   const rows = sorted.map((ts) => {
     const row: (string | number | null)[] = [new Date(ts * 1000).toLocaleString()];
     for (const key of metricKeys) {
       const val = lookup[key]?.get(ts);
       row.push(val !== undefined ? Math.round(val * 10) / 10 : null);
     }
+    row.push(isAlarm(lookup, ts) || null);
     return row;
   });
 
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  ws["!cols"] = [{ wch: 20 }, ...metricKeys.map(() => ({ wch: 14 }))];
+  ws["!cols"] = [{ wch: 20 }, ...metricKeys.map(() => ({ wch: 14 })), { wch: 8 }];
+
+  const alarmCol = metricKeys.length + 1;
+  for (let r = 0; r < rows.length; r++) {
+    const alarm = rows[r][alarmCol];
+    if (alarm) {
+      for (let c = 0; c <= alarmCol; c++) {
+        const addr = XLSX.utils.encode_cell({ r: r + 1, c });
+        if (ws[addr]) {
+          ws[addr].s = { fill: { fgColor: { rgb: "FFE0E0" } }, font: { color: { rgb: "CC0000" } } };
+        }
+      }
+    }
+  }
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, `EBC10 ${period}`);
   XLSX.writeFile(wb, `ebc10-history-${period}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-async function generatePDF(data: { period: string; step: string; metrics: Record<string, [number, number][]> }, period: string) {
+async function generatePDF(data: ExportPayload, period: string) {
   const { default: jsPDF } = await import("jspdf");
-
-  const allTimestamps = new Set<number>();
-  for (const values of Object.values(data.metrics)) {
-    for (const [ts] of values) allTimestamps.add(ts);
-  }
-  const sorted = [...allTimestamps].sort((a, b) => a - b);
-
-  const lookup: Record<string, Map<number, number>> = {};
-  for (const [name, values] of Object.entries(data.metrics)) {
-    const m = new Map<number, number>();
-    for (const [ts, val] of values) m.set(ts, val);
-    lookup[name] = m;
-  }
+  const { sorted, lookup } = buildTable(data);
 
   const metricKeys = Object.keys(METRIC_LABELS);
+  const cols = metricKeys.length + 2;
   const pdf = new jsPDF("l", "mm", "a4");
   const pageW = 297;
   const margin = 10;
-  const colW = (pageW - margin * 2) / (metricKeys.length + 1);
+  const colW = (pageW - margin * 2) / cols;
   const rowH = 6;
   let y = margin;
 
@@ -198,26 +218,35 @@ async function generatePDF(data: { period: string; step: string; metrics: Record
   pdf.text(`Generated: ${new Date().toLocaleString()} | Step: ${data.step}`, margin, y);
   y += 8;
 
-  pdf.setFontSize(7);
-  pdf.setFont("helvetica", "bold");
-  pdf.text("Timestamp", margin, y);
-  metricKeys.forEach((key, i) => {
-    pdf.text(METRIC_LABELS[key], margin + colW * (i + 1), y);
-  });
-  y += rowH;
-  pdf.setFont("helvetica", "normal");
+  const drawHeader = () => {
+    pdf.setFontSize(7);
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Timestamp", margin, y);
+    metricKeys.forEach((key, i) => {
+      pdf.text(METRIC_LABELS[key], margin + colW * (i + 1), y);
+    });
+    pdf.text("Alarm", margin + colW * (metricKeys.length + 1), y);
+    y += rowH;
+    pdf.setFont("helvetica", "normal");
+  };
+
+  drawHeader();
 
   for (const ts of sorted) {
     if (y > 200) {
       pdf.addPage();
       y = margin;
-      pdf.setFont("helvetica", "bold");
-      pdf.text("Timestamp", margin, y);
-      metricKeys.forEach((key, i) => {
-        pdf.text(METRIC_LABELS[key], margin + colW * (i + 1), y);
-      });
-      y += rowH;
-      pdf.setFont("helvetica", "normal");
+      drawHeader();
+    }
+
+    const alarm = isAlarm(lookup, ts);
+    if (alarm) {
+      pdf.setFillColor(255, 230, 230);
+      pdf.rect(margin - 1, y - 4, pageW - margin * 2 + 2, rowH, "F");
+      pdf.setTextColor(200, 0, 0);
+    } else {
+      pdf.setTextColor(0, 0, 0);
     }
 
     pdf.text(new Date(ts * 1000).toLocaleString(), margin, y);
@@ -225,9 +254,15 @@ async function generatePDF(data: { period: string; step: string; metrics: Record
       const val = lookup[key]?.get(ts);
       pdf.text(val !== undefined ? String(Math.round(val * 10) / 10) : "—", margin + colW * (i + 1), y);
     });
+    if (alarm) {
+      pdf.setFont("helvetica", "bold");
+      pdf.text(alarm, margin + colW * (metricKeys.length + 1), y);
+      pdf.setFont("helvetica", "normal");
+    }
     y += rowH;
   }
 
+  pdf.setTextColor(0, 0, 0);
   pdf.save(`ebc10-history-${period}-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 

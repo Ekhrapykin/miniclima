@@ -145,7 +145,7 @@ export default function Dashboard() {
       />
 
       <main className="main-grid">
-        <HumidityGauge rh={rh} sp={sp} loading={loading} flag={vals.flag} t={vals.t} />
+        <HumidityGauge rh={rh} sp={sp} lo={sernum.lo} hi={sernum.hi} loading={loading} flag={vals.flag} t={vals.t} />
         <div className="right-column">
           <ReadingsGrid vals={vals} sernum={sernum} ophours={ophours} />
           <GrafanaPanel />
