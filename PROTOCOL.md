@@ -354,7 +354,13 @@ Set HY=4:   TX: #setPoint\x00\x03\x00\x04\r
 All confirmed via live testing (2026-05-02).
 
 #### RH correction / Temperature offset write
-**Status: NOT YET DECODED.** Field IDs 4–8 do not work with `#setPoint`. The mechanism for writing RHC is unknown — it may use a completely different command.
+**Status: NOT AVAILABLE OVER RS232.** Systematic probing (2026-05-02) tested:
+- `#setPoint` field IDs 4–15 (unsigned and 0x80 sign-bit encodings) — all rejected
+- `#setPoint` with alternate prefix bytes 0x01–0x0F — all rejected
+- ~90 guessed `#`-prefixed command names (`#rhCorr`, `#setRHC`, `#correction`, `#offset`, `#cal`, German variants, etc.) — all returned masked echo + `?`
+- Plain command names (`rhCorr`, `setRHC`, `corr`, `offset`, `cal`, etc.) with nibble-encoded payloads — all rejected
+
+The miniClima Tool (Windows) also does not expose RHC. This setting appears to be **front-panel only**.
 
 ---
 
@@ -410,7 +416,7 @@ Pushed immediately after a successful `#setPoint` write.
 | Item | Status |
 |---|---|
 | `#setPoint` first `\x00` byte — exact meaning | Constant across all field IDs; possibly padding or flags |
-| RH correction (RHC) write command | `#setPoint` field IDs 4–8 don't work; mechanism unknown |
+| RH correction (RHC) write command | Not available over RS232 — front-panel only (confirmed via brute-force probing) |
 | `F4`/`F5` sub-byte meaning | Sub-bytes observed: `F5`=`04`, `F4`=`00`; likely pump index or mode — not confirmed |
 | `F0` exact semantics | Always follows `F9` in the alarm triplet; meaning of the distinction unclear |
 | Alarm triplet vs real error | `F9`+`F0`+`FE` fires after every stop — unclear if it signals an actual fault or is a normal stop log entry |

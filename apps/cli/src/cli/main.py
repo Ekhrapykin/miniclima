@@ -68,7 +68,7 @@ def main():
                 print(f"Serial:   {s.get('serial', '?')}  FW: {s.get('firmware', '?')}")
                 print(f"Settings: SP={s.get('sp', '?')}%  LO={s.get('lo', '?')}%  "
                       f"HI={s.get('hi', '?')}%  HY={s.get('hy', '?')}  "
-                      f"LT={s.get('lt', '?')}min  TO={s.get('to', '?')}")
+                      f"LT={s.get('lt', '?')}min  RHC={s.get('rhc', '?')}")
                 print(f"State:    {v.get('state', '?')}")
                 if "rh" in v:
                     print(f"Sensor:   RH={v.get('rh', '?')}%  T={v.get('t', '?')}°C  "
