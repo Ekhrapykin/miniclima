@@ -11,8 +11,14 @@ class Cmd(str, Enum):
     OPHOURS      = "ophours"
     DUMP         = "dump"
     SET_SP       = "set-sp"
+    SET_ALARM_MIN  = "set-alarm-min"
+    SET_ALARM_MAX  = "set-alarm-max"
+    SET_HYSTERESIS = "set-hysteresis"
     SET_LOG_TIME = "set-log-time"
     SET_DATE     = "set-date"
     SET_TIME     = "set-time"
     START        = "start"
     STOP         = "stop"
+
+
+    

@@ -62,6 +62,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 just status                    # quick device status
 just cli vals                  # live readings
 just cli set-sp 55             # set setpoint to 55%
+just cli set-alarm-min 40      # set alarm low threshold
+just cli set-alarm-max 70      # set alarm high threshold
+just cli set-hysteresis 4      # set hysteresis (1-10%)
 just cli dump                  # retrieve history log
 just api                       # start API server (port 8000)
 just frontend-dev              # start Next.js dashboard (port 3000)
@@ -74,6 +77,9 @@ uv run ebc10 --port /dev/ttyACM0 vals
 uv run ebc10 --port /dev/ttyACM0 start
 uv run ebc10 --port /dev/ttyACM0 stop
 uv run ebc10 --port /dev/ttyACM0 set-sp 55
+uv run ebc10 --port /dev/ttyACM0 set-alarm-min 40
+uv run ebc10 --port /dev/ttyACM0 set-alarm-max 70
+uv run ebc10 --port /dev/ttyACM0 set-hysteresis 4
 uv run ebc10 --port /dev/ttyACM0 set-log-time 15
 uv run ebc10 --port /dev/ttyACM0 set-date 26.03.26
 uv run ebc10 --port /dev/ttyACM0 set-time 14:54
@@ -151,10 +157,11 @@ sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=ttyACM0
 1. **Frontend import loader** — add visual feedback (spinner/disabled state) to the dump import button
 2. **Alarm events over polling** — investigate how/whether alarm events (F9) appear in the regular poll cycle vs. only in history dump
 3. **Frontend label/value validation** — verify that metric labels and values from WebSocket match the poll response structure
-4. **Write command validation** — live-test `setPoint`, `SetAlarmMin`, `SetAlarmMax`, and other write commands against the device
-5. **Frontend design** — isolate settings panel, increase base font sizes
-6. **Settings comparison** — diff dump settings snapshots against live settings to detect drift
-7. **Grafana reports review** — audit whether current panels cover all needed signals; add or remove as needed
-8. **Retention period**
-9. **Embed grafana to web interface**
-10. **hardware** - need to calculate for device, need to adjust power consumption, power supply
+4. ~~**Write command validation**~~ — done: SP, alarm min/max, hysteresis, log time, date, time all confirmed working
+5. **RH correction write** — `#setPoint` field IDs 4+ don't work; mechanism unknown
+6. **Frontend design** — isolate settings panel, increase base font sizes
+7. **Settings comparison** — diff dump settings snapshots against live settings to detect drift
+8. **Grafana reports review** — audit whether current panels cover all needed signals; add or remove as needed
+9. **Retention period**
+10. **Embed grafana to web interface**
+11. **hardware** - need to calculate for device, need to adjust power consumption, power supply

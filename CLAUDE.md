@@ -11,7 +11,7 @@ uv sync
 # CLI — read device status
 uv run ebc10 --port /dev/ttyACM0 status
 
-# CLI — all subcommands: vals sernum date time ophours dump start stop set-sp set-log-time set-date set-time
+# CLI — all subcommands: vals sernum date time ophours dump start stop set-sp set-alarm-min set-alarm-max set-hysteresis set-log-time set-date set-time
 uv run ebc10 --port /dev/ttyACM0 <cmd> [value]
 
 # API server (hot-reload, port 8000)
@@ -54,52 +54,16 @@ Build a Python client on Raspberry Pi to read logs and send commands to the mini
 - **RS232 port**: Front panel "PC" port
 - **Serial settings**: 9600 baud, 8N1, no flow control (confirmed via sniffing)
 
-## Protocol (reverse-engineered — 5 sniffing sessions completed)
+## Protocol
 
-The protocol is **plain 7-bit ASCII**, not binary. No framing, no checksums. Behaves like an interactive terminal:
-- Host sends `command\r`
-- EBC responds with value or `?\r\n` (prompt) if expecting input
-- For writes: host sends nibble-encoded value + `\r`
-- EBC responds `!\r\n` (success) or `?\r\n` (fail/out-of-range)
-
-### Value encoding for writes
-Each decimal digit is sent as its raw numeric value, not ASCII code:
-- `15` → `01 05 0D`
-- `26.03.23` → `02 06 2E 00 03 2E 02 03 0D` (`.` sent as-is `0x2E`)
-
-### History dump protocol (confirmed)
-```
-TX: dump\r  →  RX: dump\r\nreally?\r\n  →  TX: yes\r  →  RX: yes\r<hex stream>!\r\n
-```
-- Data is ASCII hex text (each byte = 2 hex chars). Empty flash = `FF`.
-- **Variable Length Structure:** The stream uses control bytes (`0xF0`–`0xFF`) as absolute sync markers.
-  - `0xFF`: Empty flash (skipped).
-  - `0xFB`: Settings snapshot. 10 bytes total. Plain hex. `[FB, SP, LO, HI, HY, TO, ??, pad, LT, pad]`. (TO uses `0x80` bit for negative).
-  - `0xF9`: Extended event. 7 bytes total. `[F9, 00, YY, MM, DD, HH, MM]` (BCD timestamp).
-  - `0xF0, F1, FA, FD, FE`: Standard events. 6 bytes total. `[TYPE, YY, MM, DD, HH, MM]` (BCD timestamp).
-  - `< 0xF0`: Periodic measurement. 4 bytes total. `[RH, YY, T1, T2]`. (T1/T2 > 127 are negative).
-- `parse_dump_records(hex_str)` in `ebc10/utils.py` uses a state machine. It aborts the current record and resyncs if it encounters an unexpected `0xF0`-`0xFF` byte mid-payload (caused by flash write interruptions).
-
-### `#setPoints+NNN` — dual-form command
-- `#setPoints+000\r` = read/poll query (sent every cycle after `sernum`)
-- `#setPoints+NNN\r` (NNN ≠ 000) = write-attempt form, sent ~100ms after the `+000` in same cycle
-- EBC always responds `#**...**\r\n` (14 asterisks); `?\r\n` seen after asterisks in captures is from concurrent keepalive bytes, NOT part of this response
-- NNN hypothesis: 3-digit decimal of target SP (e.g. `+050` = SP 50%). Inconsistent variants (`+444` for SP=54, `+555` for SP=57, `+111`/`+222` transitionally) seen across sessions — encoding not fully confirmed
-- `# TODO: confirm` — whether `#setPoints+NNN` actually changes the SP on the EBC needs live testing
-
-### NOT YET DECODED
-- AlarmMin / AlarmMax / Hysteresis write commands (LO, HI, HY)
-- Temperature offset write command
-- `#setPoint \x00\x00` prefix — observed constant, purpose unknown
-- History dump record format — full field decode
-- `#setPoints+NNN` write-form effect — confirmed via captures but not tested live
-
-### Autonomous push messages (EBC → host, no request)
-- Periodic: `XX YY +T1 +T2 00 [flag]\r\n` (same fields as vals, no state prefix)
-- Stop event: `26.03.26 09:32 Stop\r\n`
-- Start event: `26.03.26 08:59 Start\r\nSet:57 39 69 02 15 -05 04\r\n68 27 +15 +35 00 \r\n`
-- Settings change: `26.03.26 09:45 Set:57 39 69 02 15 -05 04\r\n` (after `#setPoint` write)
-- Error: `26.03.26 14:55 Signal Error\r\n`
+Full protocol reference: [PROTOCOL.md](./PROTOCOL.md). Key points for writing code:
+- Plain 7-bit ASCII, not binary. No framing, no checksums.
+- `?` is the device's idle prompt (sent after any `\r` input), not a write-specific prompt.
+- Write commands (`setLogTime`, `date`, `time`): send command + payload back-to-back with ~100ms delay. Do NOT wait for `?`.
+- `#setPoint` (no 's'): blob protocol — `#setPoint\x00[field_id][tens][units]\r` as one contiguous write. Field IDs: 0=SP, 1=HI, 2=LO, 3=HY.
+- `#setPoints+NNN` (with 's'): polling heartbeat only — confirmed NO write effect.
+- `start`/`stop`: respond with echo, NOT `!`.
+- RHC write: not yet reverse-engineered (`set_rhcorr` raises `NotImplementedError`).
 
 ## Repository Structure
 
@@ -130,15 +94,10 @@ Dockerfile                 — API-only image; copies packages/ebc10 + apps/api,
 ```
 
 ## How to Help Me (Claude Instructions)
-- Protocol is ASCII text, not binary — do not suggest binary framing or checksums.
-- When I paste hex dumps, help identify: command names, nibble-encoded values, response codes.
 - Protocol is implemented in `packages/ebc10/src/ebc10/client.py` (`Client`); CLI in `apps/cli/src/cli/main.py`.
-- When implementing writes, use nibble encoding (digit value, not ASCII code).
-- `#setPoint` takes the SP value as `\x00\x00[tens_nibble][units_nibble]\r` — the `\x00\x00` prefix is confirmed but purpose unknown; use it as-is.
-- `start\r` and `stop\r` respond with a command echo, NOT `!\r\n` — check for echo string, not `!`.
-- History dump: `dump\r` → EBC says `really?\r\n` → send `yes\r` → receive ASCII hex stream ending with `!\r\n`. Each byte encoded as 2 hex chars.
-- `#setPoints+NNN`: Tool sends `+000` as the poll query each cycle, then optionally `+NNN` (NNN = 3-digit decimal SP target) as a write attempt. Whether this actually sets SP needs live confirmation — mark with `# TODO: confirm`. The confirmed SP write is `#setPoint` (no 's') with `\x00\x00` prefix and nibble encoding.
-- `_write_cmd()` accepts `raw_payload: bytes` for binary payloads (e.g. `#setPoint` with `\x00\x00` prefix). Use `raw_payload=` instead of `value=` to skip nibble encoding.
+- Read [PROTOCOL.md](./PROTOCOL.md) before modifying serial communication code.
+- When I paste hex dumps, help identify: command names, nibble-encoded values, response codes.
+- `_write_cmd()` accepts `raw_payload: bytes` for binary payloads. Use `raw_payload=` instead of `value=` to skip nibble encoding.
 - API modules: `connection.py` (serial state + blocking helpers), `prometheus.py` (metrics + remote write), `poll.py` (background loop), `main.py` (FastAPI wiring only). Import shared state as `import api.connection as conn; conn._latest` — never copy to a local var.
 - `LOG_LEVEL` env var configures both API logger and `ebc10` logger — set `DEBUG` for raw serial traffic in container logs.
 - `python-snappy` (Prometheus remote write dep) requires system `libsnappy` — not available on macOS without `brew install snappy`. Only needed in Docker; local import errors are expected.

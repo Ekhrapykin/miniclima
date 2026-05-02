@@ -35,6 +35,15 @@ def main():
     p = sub.add_parser(Cmd.SET_SP,       help="Set humidity setpoint (%%)")
     p.add_argument("value", type=int)
 
+    p = sub.add_parser(Cmd.SET_ALARM_MIN, help="Set alarm min (%%)")
+    p.add_argument("value", type=int)
+
+    p = sub.add_parser(Cmd.SET_ALARM_MAX, help="Set alarm max (%%)")
+    p.add_argument("value", type=int)
+
+    p = sub.add_parser(Cmd.SET_HYSTERESIS, help="Set hysteresis (%%)")
+    p.add_argument("value", type=int)
+
     p = sub.add_parser(Cmd.SET_LOG_TIME, help="Set log interval (min)")
     p.add_argument("value", type=int)
 
@@ -86,6 +95,15 @@ def main():
 
             case Cmd.SET_SP:
                 print("OK" if c.set_setpoint(args.value) else "FAIL")
+
+            case Cmd.SET_ALARM_MIN:
+                print("OK" if c.set_alarm_min(args.value) else "FAIL")
+
+            case Cmd.SET_ALARM_MAX:
+                print("OK" if c.set_alarm_max(args.value) else "FAIL")
+
+            case Cmd.SET_HYSTERESIS:
+                print("OK" if c.set_hysteresis(args.value) else "FAIL")
 
             case Cmd.SET_LOG_TIME:
                 print("OK" if c.set_log_time(args.value) else "FAIL")

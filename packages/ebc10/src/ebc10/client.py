@@ -59,24 +59,20 @@ class Client:
 
     def _write_cmd(self, cmd: str, value: str = "", raw_payload: bytes | None = None) -> bool:
         """
-        Send a write command: cmd\\r → wait for '?' prompt → send payload.
-        Pass `value` for nibble-encoded writes, or `raw_payload` for binary payloads.
-        Returns True on '!' (success).
+        Send command + payload back-to-back, then scan for '!'.
         """
+        import time
         self._flush_input()
         self._send((cmd + "\r").encode("ascii"))
-        for _ in range(_MAX_READ_LINES):
-            if self._readline() == "?":
-                break
-        else:
-            log.warning(f"write_cmd({cmd!r}): no '?' prompt received")
-            return False
+        time.sleep(0.1)
         self._send(raw_payload if raw_payload is not None else encode_nibbles(value))
-        resp = self._readline()
-        if resp != "!":
-            log.warning(f"write_cmd({cmd!r}): unexpected response {resp!r}")
-            return False
-        return True
+        for _ in range(_MAX_READ_LINES * 2):
+            resp = self._readline()
+            log.debug(f"write_cmd({cmd!r}): {resp!r}")
+            if resp == "!":
+                return True
+        log.warning(f"write_cmd({cmd!r}): no '!' received")
+        return False
 
     def _read_int(self, cmd: str) -> int | None:
         try:
@@ -175,37 +171,49 @@ class Client:
     def set_time(self, time_str: str) -> bool:
         return self._write_cmd("time", time_str)
 
+    def _setpoint_blob(self, field: int, value: int) -> bool:
+        """
+        Write a setting via #setPoint blob command.
+        Protocol: send '#setPoint' + \\x00 + field_id + tens + units + CR as one blob.
+        Field IDs: 0=SP, 1=HI, 2=LO, 3=HY.
+        """
+        tens  = value // 10
+        units = value % 10
+        payload = b"#setPoint" + bytes([0x00, field, tens, units, 0x0D])
+        log.debug(f"setPoint(field={field}): sending {payload!r}")
+        self._flush_input()
+        self._send(payload)
+        for _ in range(_MAX_READ_LINES * 2):
+            line = self._readline()
+            log.debug(f"setPoint(field={field}) response: {line!r}")
+            if "!" in line:
+                return True
+        log.warning(f"setPoint(field={field}): no '!' received")
+        return False
+
     def set_setpoint(self, rh_percent: int) -> bool:
-        """
-        Set humidity setpoint via #setPoint command (confirmed write, no 's').
-        Payload after '?' prompt: \\x00\\x00 + nibble-encoded tens + units + CR
-        E.g. SP=57 → b'\\x00\\x00\\x05\\x07\\x0d'
-        """
         if not 0 <= rh_percent <= 99:
             raise ValueError(f"setpoint must be 0–99%, got {rh_percent}")
-        tens  = rh_percent // 10
-        units = rh_percent % 10
-        return self._write_cmd("#setPoint", raw_payload=bytes([0x00, 0x00, tens, units, 0x0D]))
+        return self._setpoint_blob(0, rh_percent)
 
-    def set_alarm_min(self, lo: int) -> bool:  # TODO: confirm command name — not yet tested live
+    def set_alarm_min(self, lo: int) -> bool:
         if not 0 <= lo <= 99:
             raise ValueError(f"alarm lo must be 0–99%, got {lo}")
-        return self._write_cmd("setAlarmMin", str(lo).zfill(2))
+        return self._setpoint_blob(2, lo)
 
-    def set_alarm_max(self, hi: int) -> bool:  # TODO: confirm command name — not yet tested live
+    def set_alarm_max(self, hi: int) -> bool:
         if not 0 <= hi <= 99:
             raise ValueError(f"alarm hi must be 0–99%, got {hi}")
-        return self._write_cmd("setAlarmMax", str(hi).zfill(2))
+        return self._setpoint_blob(1, hi)
 
-    def set_hysteresis(self, hy: int) -> bool:  # TODO: confirm command name — not yet tested live
+    def set_hysteresis(self, hy: int) -> bool:
         if not 1 <= hy <= 10:
             raise ValueError(f"hysteresis must be 1–10%, got {hy}")
-        return self._write_cmd("setHysteresis", str(hy).zfill(2))
+        return self._setpoint_blob(3, hy)
 
-    def set_rhcorr(self, rhc: int) -> bool:  # TODO: confirm command name — not yet tested live
-        if not -5 <= rhc <= 5:
-            raise ValueError(f"RH correction must be -5–+5%, got {rhc}")
-        return self._write_cmd("setTempOffset", str(rhc).zfill(2))
+    def set_rhcorr(self, rhc: int) -> bool:
+        # TODO: field ID not yet discovered — fields 4-8 don't work with #setPoint
+        raise NotImplementedError("RH correction write not yet reverse-engineered")
 
     def start(self) -> bool:
         return self._echo_cmd("start")

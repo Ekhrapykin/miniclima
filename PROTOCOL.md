@@ -120,37 +120,39 @@ TX: ophours\r
 RX: 000004\r\n       (6-digit decimal, total operating hours)
 ```
 
-#### `#setPoints+NNN` — Setpoint query and write attempt
+#### `#setPoints+NNN` — Polling heartbeat (NO write effect)
 
-This command has **two forms** used in the same polling cycle:
+**Confirmed: this command does NOT change any device settings.** Analysis of a dedicated capture session (2026-05-02) where SP was changed multiple times via `#setPoints+NNN` showed the setpoint value remained unchanged throughout all 2922 lines. The actual SP write command is `#setPoint` (no 's') with the blob protocol described above.
+
+The Windows miniClima Tool sends this command in two forms each polling cycle:
 
 **Form 1 — Read query (always sent):**
 ```
 TX: #setPoints+000\r
-RX: #**************\r\n    (14 asterisks, meaning of masked content unknown)
+RX: #**************\r\n    (14 asterisks, masked content unknown)
 ```
 
-**Form 2 — Write attempt (sent immediately after Form 1, ~100ms later, when Tool wants to change SP):**
+**Form 2 — Sent ~100ms after Form 1 when Tool has a pending SP change:**
 ```
 TX: #setPoints+NNN\r
 RX: #**************\r\n    (same response regardless of NNN)
 ```
 
-The `?\r\n` that sometimes appears after the asterisks in captures is **not** part of this command's response — it comes from concurrent keepalive `\r` bytes in the buffer.
+The `?\r\n` that sometimes appears after the asterisks is the device's **idle prompt** from concurrent keepalive `\r` bytes, not part of this command's response.
 
-**Observed `+NNN` variants across all 5 sessions:**
+**Observed `+NNN` variants across 6 sessions:**
 
 | NNN | SP at time | Notes |
 |-----|-----------|-------|
 | `+000` | any | Read query — always present in polling cycle |
-| `+050` | 50% | 3-digit decimal of SP=50 — direct match |
-| `+444` | 54% | Seen in sessions 3 and 4 when SP=54; encoding unclear (`054` expected) |
-| `+555` | 57% | Session 4, after SP written to 57; encoding unclear (`057` expected) |
-| `+111` | 55%, then 54% | Session 3, transitional — appears right after a settings change, before settling |
-| `+222` | 55% | Session 3, before settings change |
-| `-555` | 55% | Session 2; `-` sign unexpected, likely garbled |
+| `+050` | 50% | 3-digit decimal of SP=50 |
+| `+444` | 54% | Encoding unclear |
+| `+555` | 57% | Encoding unclear |
+| `+111` | transitional | Appears right after settings changes |
+| `+222` | 55% | Before settings change |
+| `-555` | 55% | Sign unexpected, likely garbled |
 
-**Working hypothesis:** NNN encodes the target SP value in 3-digit decimal (e.g. `+050` = SP 50%). The inconsistent variants (`+444`, `+555`) may be a Tool bug, a different encoding scheme in some firmware version, or communication noise. Whether `#setPoints+NNN` actually writes the SP or is purely a status sync is **not confirmed** — needs live testing. The confirmed SP write command is `#setPoint` (no 's').
+The NNN value likely encodes something related to SP but the encoding is inconsistent and the command has no observable effect on device state. It appears to be a status sync or heartbeat mechanism used by the Windows Tool.
 
 ---
 
@@ -159,18 +161,18 @@ The `?\r\n` that sometimes appears after the asterisks in captures is **not** pa
 #### `setLogTime` — Set log interval (confirmed)
 ```
 TX: setLogTime\r
-RX: ?\r\n                  <- prompt
-TX: D1 D2 0D               <- nibble-encoded minutes
+    (wait ~100ms)
+TX: D1 D2 0D               <- nibble-encoded minutes, sent back-to-back
 RX: setLogTime\r\n         <- command echo
 RX: NN\r\n                 <- new value echo (ASCII decimal)
 RX: !\r\n                  <- success  (or ?\r\n if out of range)
 ```
-Valid range: 1–99 minutes.
+Valid range: 1–99 minutes. The host sends the value ~100ms after the command without waiting for `?`.
 
 #### `date` — Set device date (confirmed)
 ```
 TX: date\r
-RX: ?\r\n
+    (wait ~100ms)
 TX: D1 D2 2E D3 D4 2E D5 D6 0D    <- DD.MM.YY in nibbles, '.' as-is
 RX: !\r\n
 ```
@@ -178,32 +180,47 @@ RX: !\r\n
 #### `time` — Set device time (confirmed)
 ```
 TX: time\r
-RX: ?\r\n
+    (wait ~100ms)
 TX: H1 H2 3A M1 M2 0D             <- HH:MM in nibbles, ':' as-is
 RX: !\r\n
 ```
 
-#### `#setPoint` — Set setpoint RH (confirmed)
+#### `#setPoint` — Set device parameters (confirmed)
 
 Note: this is `#setPoint` (no 's') — distinct from the read query `#setPoints+000`.
 
+The command uses a **blob protocol**: the entire payload is sent as one contiguous write with no prompt/response exchange in the middle. Format:
+
 ```
-TX: #setPoint\x00\x00 SP1 SP2 0D    <- SP value nibble-encoded, \x00\x00 prefix (unknown purpose)
-RX: #*************\r\n              <- 13 asterisks ack
+TX: #setPoint + \x00 + FIELD_ID + TENS + UNITS + \r    (all as one blob)
+RX: #*************\r\n              <- asterisk-masked echo
 RX: !\r\n                           <- success
-RX: DD.MM.YY HH:MM Set:SP LO HI HY LT RHC ??\r\n  <- event push confirming new settings
+RX: DD.MM.YY HH:MM Set:SP LO HI ALR LT RHC HY\r\n  <- settings broadcast
 ```
 
-**Confirmed examples:**
+**Field IDs (confirmed via live testing):**
+
+| Field ID | Parameter | Valid range | Example |
+|----------|-----------|-------------|---------|
+| `0x00`   | Setpoint (SP) | 0–99% | `#setPoint\x00\x00\x05\x05\r` → SP=55 |
+| `0x01`   | Alarm max (HI) | 0–99% | `#setPoint\x00\x01\x07\x00\r` → HI=70 |
+| `0x02`   | Alarm min (LO) | 0–99% | `#setPoint\x00\x02\x04\x00\r` → LO=40 |
+| `0x03`   | Hysteresis (HY) | 1–10% | `#setPoint\x00\x03\x00\x04\r` → HY=4 |
+
+The first `\x00` byte after `#setPoint` is constant across all field IDs — purpose unknown (possibly a padding/flags byte). The second byte selects the field.
+
+**Confirmed capture examples (SP write):**
 ```
 SP 54 → 57:  TX: 23 73 65 74 50 6F 69 6E 74 00 00 05 07 0D
-             (= #setPoint + \x00\x00 + nibble(5) + nibble(7) + CR)
+             (= #setPoint + \x00 + field=0 + tens=5 + units=7 + CR)
 
 SP 57 → 50:  TX: 23 73 65 74 50 6F 69 6E 74 00 00 05 00 0D
-             (= #setPoint + \x00\x00 + nibble(5) + nibble(0) + CR)
+             (= #setPoint + \x00 + field=0 + tens=5 + units=0 + CR)
 ```
 
-The `\x00\x00` prefix is consistent across both captures — purpose unknown (possibly flags or padding).
+**Important:** The device responds with an asterisk-masked echo followed by a `Set:` settings broadcast, then `!`. The `!` can arrive 2–3 lines after the echo, so readers must scan multiple lines.
+
+**Not yet discovered:** RH correction (RHC) write. Field IDs 4–8 do not work with `#setPoint`. The mechanism for writing RHC is unknown.
 
 #### `start` — Start the unit (confirmed)
 ```
@@ -324,8 +341,20 @@ F4 00 [timestamp]   ← pump off
 
 `POST /dump/import` API endpoint retrieves full dump, parses records, pushes to Prometheus as historical samples via remote write.
 
-#### AlarmMin / AlarmMax / Hysteresis / Temperature offset writes
-**Status: NOT YET DECODED.** Write attempts during session 5 failed due to severe communication noise — no clean TX packet was captured. Need a stable sniffing session dedicated to changing these parameters.
+#### AlarmMin / AlarmMax / Hysteresis writes — via `#setPoint` blob (confirmed)
+
+These use the same `#setPoint` blob protocol as the setpoint write, with different field IDs. See the `#setPoint` section above for the full protocol and field ID table.
+
+```
+Set LO=40:  TX: #setPoint\x00\x02\x04\x00\r
+Set HI=70:  TX: #setPoint\x00\x01\x07\x00\r
+Set HY=4:   TX: #setPoint\x00\x03\x00\x04\r
+```
+
+All confirmed via live testing (2026-05-02).
+
+#### RH correction / Temperature offset write
+**Status: NOT YET DECODED.** Field IDs 4–8 do not work with `#setPoint`. The mechanism for writing RHC is unknown — it may use a completely different command.
 
 ---
 
@@ -333,8 +362,10 @@ F4 00 [timestamp]   ← pump off
 
 | Bytes | ASCII | Meaning |
 |---|---|---|
-| `21 0D 0A` | `!\r\n` | Success |
-| `3F 0D 0A` | `?\r\n` | Failure, out-of-range, or waiting for value |
+| `21 0D 0A` | `!\r\n` | Success / command accepted |
+| `3F 0D 0A` | `?\r\n` | Idle prompt — sent after any input (keepalive, unrecognized command, or write failure) |
+
+Note: `?` is the device's **idle prompt**, not specifically a write prompt or error indicator. It appears after any `\r` input (including keepalive bytes) and after failed/out-of-range write attempts. For write commands like `setLogTime`, `date`, and `time`, the host sends the value payload ~100ms after the command — it does not wait for `?` first.
 
 ---
 
@@ -378,12 +409,10 @@ Pushed immediately after a successful `#setPoint` write.
 
 | Item | Status |
 |---|---|
-| `#setPoint \x00\x00` prefix — exact meaning | Observed constant, purpose unclear |
-| AlarmMin / AlarmMax write command | Not captured |
-| Hysteresis write command | Not captured |
-| Temperature offset write command | Not captured |
+| `#setPoint` first `\x00` byte — exact meaning | Constant across all field IDs; possibly padding or flags |
+| RH correction (RHC) write command | `#setPoint` field IDs 4–8 don't work; mechanism unknown |
 | `F4`/`F5` sub-byte meaning | Sub-bytes observed: `F5`=`04`, `F4`=`00`; likely pump index or mode — not confirmed |
 | `F0` exact semantics | Always follows `F9` in the alarm triplet; meaning of the distinction unclear |
 | Alarm triplet vs real error | `F9`+`F0`+`FE` fires after every stop — unclear if it signals an actual fault or is a normal stop log entry |
-| `#setPoints+NNN` write form — effect confirmed? | Variants +000/+050/+111/+222/+444/+555/-555 seen; NNN likely = target SP in 3-digit decimal; whether it actually writes SP needs live test |
+| `#setPoints+NNN` encoding | NNN variants inconsistent (+444 for SP=54, +555 for SP=57); confirmed to have no write effect |
 
