@@ -23,7 +23,19 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [importState, setImportState] = useState<{ loading: boolean; ok?: boolean; msg?: string } | null>(null);
+  const [importState, setImportState] = useState<{ loading: boolean; ok?: boolean; msg?: string; startedAt?: number } | null>(null);
+  const [staleness, setStaleness] = useState<"ok" | "stale" | "offline">("ok");
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!lastUpdate) return;
+      const age = Date.now() - lastUpdate.getTime();
+      if (age > 300_000) setStaleness("offline");
+      else if (age > 60_000) setStaleness("stale");
+      else setStaleness("ok");
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [lastUpdate]);
 
   const showFlash = (ok: boolean, msg: string) => {
     setFlash({ ok, msg });
@@ -53,6 +65,7 @@ export default function Dashboard() {
           if (d.ophours != null) setOphours(d.ophours);
           setLastUpdate(new Date());
           setConnErr(false);
+          setStaleness("ok");
           setLoading(false);
         } catch { /* ignore malformed messages */ }
       };
@@ -93,24 +106,24 @@ export default function Dashboard() {
   const isStandby = vals.state === "standby";
 
   const importHistory = async () => {
-    setImportState({ loading: true });
+    setImportState({ loading: true, startedAt: Date.now() });
     try {
       const r = await fetch(`${API}/dump/import`, { method: "POST" });
       const json = await r.json();
-      const typesSummary = json.types
-        ? Object.entries(json.types as Record<string, number>)
-            .map(([t, n]) => `${n}×${t}`)
-            .join(", ")
-        : "";
-      setImportState({
-        loading: false,
-        ok: r.ok,
-        msg: r.ok
-          ? `Pushed ${json.pushed} series (${typesSummary})`
-          : `Error ${r.status}`,
-      });
-    } catch {
-      setImportState({ loading: false, ok: false, msg: "Connection error" });
+      if (r.ok) {
+        const typesSummary = json.types
+          ? Object.entries(json.types as Record<string, number>)
+              .map(([t, n]) => `${n}×${t}`)
+              .join(", ")
+          : "";
+        console.log(`[import] Pushed ${json.pushed} series (${typesSummary})`);
+      } else {
+        console.error(`[import] Error ${r.status}`, json);
+      }
+      setImportState({ loading: false });
+    } catch (e) {
+      console.error("[import] Connection error", e);
+      setImportState({ loading: false });
     }
   };
 
@@ -125,6 +138,8 @@ export default function Dashboard() {
         isStandby={isStandby}
         loading={loading}
         serial={sernum.serial}
+        staleness={staleness}
+        lastUpdate={lastUpdate}
       />
 
       <main className="main-grid">
@@ -143,6 +158,7 @@ export default function Dashboard() {
         onOpenSettings={() => setSettingsOpen(true)}
         importState={importState}
         onImport={importHistory}
+        exportData={{ sernum, vals, ophours, timestamp: lastUpdate ?? new Date() }}
       />
 
       <SettingsModal
@@ -157,6 +173,7 @@ export default function Dashboard() {
         serial={sernum.serial}
         firmware={sernum.firmware}
         lastUpdate={lastUpdate}
+        staleness={staleness}
       />
     </div>
   );

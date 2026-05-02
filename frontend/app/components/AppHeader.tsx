@@ -1,5 +1,15 @@
+import ThemeToggle from "./ThemeToggle";
+
 const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL ?? "http://localhost:3001";
 const PROMETHEUS_URL = process.env.NEXT_PUBLIC_PROMETHEUS_URL ?? "http://localhost:9090";
+
+function formatAge(lastUpdate: Date | null): string {
+  if (!lastUpdate) return "";
+  const sec = Math.floor((Date.now() - lastUpdate.getTime()) / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  return `${min}m ago`;
+}
 
 interface AppHeaderProps {
   flash: { ok: boolean; msg: string } | null;
@@ -8,11 +18,18 @@ interface AppHeaderProps {
   isStandby: boolean;
   loading: boolean;
   serial?: string;
+  staleness: "ok" | "stale" | "offline";
+  lastUpdate: Date | null;
 }
 
-export default function AppHeader({ flash, connErr, isRunning, isStandby, loading, serial }: AppHeaderProps) {
-  const stateKey = isRunning ? "running" : isStandby ? "standby" : "unknown";
-  const stateText = isRunning ? "RUNNING" : isStandby ? "STANDBY" : "UNKNOWN";
+export default function AppHeader({ flash, connErr, isRunning, isStandby, loading, serial, staleness, lastUpdate }: AppHeaderProps) {
+  const stale = staleness !== "ok";
+  const stateKey = stale
+    ? (staleness === "offline" ? "offline" : "stale")
+    : isRunning ? "running" : isStandby ? "standby" : "unknown";
+  const stateText = stale
+    ? `${staleness === "offline" ? "OFFLINE" : "STALE"} · ${formatAge(lastUpdate)}`
+    : isRunning ? "RUNNING" : isStandby ? "STANDBY" : "UNKNOWN";
 
   return (
     <header className="app-header">
@@ -43,13 +60,14 @@ export default function AppHeader({ flash, connErr, isRunning, isStandby, loadin
         </nav>
 
         <div className="status-indicator">
-          <span className={`status-dot ${stateKey}${isRunning ? " dot-pulse" : ""}`} />
+          <span className={`status-dot ${stateKey}${isRunning && !stale ? " dot-pulse" : stale ? " dot-pulse" : ""}`} />
           <span className={`status-label ${stateKey}`}>
             {loading ? "···" : stateText}
           </span>
         </div>
 
         {serial && <span className="header-serial">{serial}</span>}
+        <ThemeToggle />
       </div>
     </header>
   );
