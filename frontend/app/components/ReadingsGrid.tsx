@@ -17,8 +17,8 @@ export default function ReadingsGrid({ vals, sernum, ophours }: ReadingsGridProp
       <Cell label="T2 hot side"  value={getval(vals.t2,'°C')} />
       <Cell label="Setpoint"     value={getval(sernum.sp, '%')} amber />
       <Cell label="Hysteresis"   value={getval(sernum.hy, '%')} amber />
-      <Cell label="Alarm Lo"     value={getval(sernum.lo, '%')} dim />
-      <Cell label="Alarm Hi"     value={getval(sernum.hi, '%')} dim />
+      <Cell label="Alarm Min"     value={getval(sernum.lo, '%')} dim />
+      <Cell label="Alarm Max"     value={getval(sernum.hi, '%')} dim />
       <Cell label="Log interval" value={getval(sernum.lt, ' min')} dim />
       <Cell label="RH Corr"  value={sernum.rhc != null ? `${sign(sernum.rhc)}${sernum.rhc}%` : "--"} dim />
       <div className="cell cell-full">
