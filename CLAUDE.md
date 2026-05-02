@@ -108,5 +108,4 @@ Dockerfile                 — API-only image; copies packages/ebc10 + apps/api,
 ## Deployment Notes
 
 ### Remote host
-Target device is `ben` (Raspberry Pi 4B, `/home/khrap/miniclima`). Use `ssh ben` and `just push` to sync.
-Alternative device is `bill` (Orange Pi Zero, `/home/khrap/miniclima`). Use `ssh bill` and `just push` to sync.
+Target device is `ben` (Raspberry Pi 4B, `/home/khrap/miniclima`). Use `ssh ben` and `just push` to sync. Frontend available on `http://ben.local:3000/`. Deployment via docker.

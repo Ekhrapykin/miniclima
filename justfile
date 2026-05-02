@@ -107,13 +107,7 @@ frontend-lint:
     cd frontend && npm run lint
 
 # rsync project to ben (excludes .venv, __pycache__, uv.lock)
-deploy:
+upload:
     rsync -av --exclude .venv --exclude __pycache__ --exclude '*.pyc' --exclude uv.lock \
+        --exclude .git --exclude node_modules \
         ./ ben:/home/khrap/miniclima/
-
-# Run uv sync on ben
-sync-ben:
-    ssh ben "cd /home/khrap/miniclima && uv sync"
-
-# Deploy + sync ben in one shot
-push: deploy sync-ben
