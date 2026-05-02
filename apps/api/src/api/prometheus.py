@@ -21,6 +21,8 @@ CUTOFF_DAYS = os.getenv("CUTOFF_DAYS", "60")
 m_humidity    = Gauge("ebc10_humidity_percent",    "Relative humidity reading (%RH)")
 m_temp        = Gauge("ebc10_temperature_celsius", "Temperature (°C)", ["sensor"])
 m_sp          = Gauge("ebc10_setpoint_percent",    "Humidity setpoint (%RH)")
+m_alarm_min   = Gauge("ebc10_humidity_min",         "Alarm low threshold (%RH)")
+m_alarm_max   = Gauge("ebc10_humidity_max",         "Alarm high threshold (%RH)")
 m_ophours     = Gauge("ebc10_operating_hours",     "Operating hours")
 m_running     = Gauge("ebc10_device_running",      "1 if device is running, 0 if standby")
 m_poll_errors = Counter("ebc10_poll_errors_total", "Total number of poll errors")
@@ -32,12 +34,18 @@ def update_live_metrics(data: dict):
     sernum = data.get("sernum", {})
     if vals.get("rh") is not None:
         m_humidity.set(vals["rh"])
+    if vals.get("t") is not None:
+        m_temp.labels(sensor="t_out").set(vals["t"])
     if vals.get("t1") is not None:
         m_temp.labels(sensor="t1").set(vals["t1"])
     if vals.get("t2") is not None:
         m_temp.labels(sensor="t2").set(vals["t2"])
     if sernum.get("sp") is not None:
         m_sp.set(sernum["sp"])
+    if sernum.get("lo") is not None:
+        m_alarm_min.set(sernum["lo"])
+    if sernum.get("hi") is not None:
+        m_alarm_max.set(sernum["hi"])
     if data.get("ophours") is not None:
         m_ophours.set(data["ophours"])
     m_running.set(1 if vals.get("state") == "running" else 0)
