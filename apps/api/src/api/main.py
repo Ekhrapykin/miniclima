@@ -17,9 +17,11 @@ import asyncio
 import json
 import logging
 import os
+import urllib.request
+import urllib.parse
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -253,3 +255,57 @@ async def set_time(req: SetTimeRequest):
     if not ok:
         raise HTTPException(status_code=502, detail="set_time command failed")
     return {"ok": True}
+
+
+# --- export data from Prometheus ---
+
+PROMETHEUS_BASE = os.getenv("PROMETHEUS_URL", "http://prometheus:9090")
+
+EXPORT_METRICS = {
+    "humidity":  "ebc10_humidity_percent",
+    "setpoint":  "ebc10_setpoint_percent",
+    "alarm_min": "ebc10_humidity_min",
+    "alarm_max": "ebc10_humidity_max",
+    "t_ambient": 'ebc10_temperature_celsius{sensor="t_out"}',
+}
+
+PERIOD_SECONDS = {
+    "1w": 7 * 86400,
+    "1m": 30 * 86400,
+    "3m": 90 * 86400,
+    "1y": 365 * 86400,
+}
+
+STEP_FOR_PERIOD = {
+    "1w": "5m",
+    "1m": "15m",
+    "3m": "1h",
+    "1y": "6h",
+}
+
+
+@app.get("/export-data")
+async def export_data(period: str = Query(default="1m")):
+    if period not in PERIOD_SECONDS:
+        raise HTTPException(status_code=400, detail=f"Invalid period. Use: {list(PERIOD_SECONDS.keys())}")
+
+    import time
+    end = time.time()
+    start = end - PERIOD_SECONDS[period]
+    step = STEP_FOR_PERIOD[period]
+
+    async def query_metric(name: str, expr: str) -> dict:
+        params = urllib.parse.urlencode({"query": expr, "start": start, "end": end, "step": step})
+        url = f"{PROMETHEUS_BASE}/api/v1/query_range?{params}"
+        try:
+            resp = await asyncio.to_thread(lambda: urllib.request.urlopen(url, timeout=15).read())
+            data = json.loads(resp)
+            if data.get("status") == "success" and data["data"]["result"]:
+                values = data["data"]["result"][0]["values"]
+                return {"name": name, "values": [[int(ts), float(val)] for ts, val in values]}
+        except Exception as e:
+            log.warning("Prometheus query failed for %s: %s", name, e)
+        return {"name": name, "values": []}
+
+    results = await asyncio.gather(*[query_metric(name, expr) for name, expr in EXPORT_METRICS.items()])
+    return {"period": period, "step": step, "metrics": {r["name"]: r["values"] for r in results}}

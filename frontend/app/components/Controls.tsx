@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import type { Sernum, Vals } from "../types";
 
 interface ImportState {
   loading: boolean;
@@ -8,22 +7,15 @@ interface ImportState {
   startedAt?: number;
 }
 
-interface ExportData {
-  sernum: Sernum;
-  vals: Vals;
-  ophours: number | null;
-  timestamp: Date;
-}
-
 interface ControlsProps {
   busy: boolean;
   isRunning: boolean;
   isStandby: boolean;
   onPost: (path: string, body?: object) => void;
   onOpenSettings: () => void;
+  onOpenExport: () => void;
   importState: ImportState | null;
   onImport: () => void;
-  exportData: ExportData;
 }
 
 function ElapsedTimer({ startedAt }: { startedAt: number }) {
@@ -37,27 +29,12 @@ function ElapsedTimer({ startedAt }: { startedAt: number }) {
 
 export default function Controls({
   busy, isRunning, isStandby,
-  onPost, onOpenSettings,
+  onPost, onOpenSettings, onOpenExport,
   importState, onImport,
-  exportData,
 }: ControlsProps) {
-  const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const toggleLabel = isRunning ? "■ Stop" : "▶ Start";
   const toggleAction = isRunning ? "/stop" : "/start";
   const unknownState = !isRunning && !isStandby;
-
-  const handleExport = async (type: "excel" | "pdf") => {
-    setExporting(type);
-    try {
-      const { exportExcel, exportPDF } = await import("../lib/export");
-      if (type === "excel") await exportExcel(exportData);
-      else await exportPDF(exportData);
-    } catch (e) {
-      console.error("Export failed:", e);
-    } finally {
-      setExporting(null);
-    }
-  };
 
   return (
     <div className="controls-bar">
@@ -73,25 +50,11 @@ export default function Controls({
         ⚙ Settings
       </button>
 
+      <button className="btn" onClick={onOpenExport}>
+        Export
+      </button>
+
       <div className="controls-spacer" />
-
-      <button
-        className="btn btn-ghost"
-        disabled={exporting === "excel"}
-        onClick={() => handleExport("excel")}
-      >
-        {exporting === "excel" ? "Generating…" : "Export Excel"}
-      </button>
-
-      <button
-        className="btn btn-ghost"
-        disabled={exporting === "pdf"}
-        onClick={() => handleExport("pdf")}
-      >
-        {exporting === "pdf" ? "Generating…" : "Export PDF"}
-      </button>
-
-      <div className="controls-divider" />
 
       {importState?.loading ? (
         <div className="import-progress">

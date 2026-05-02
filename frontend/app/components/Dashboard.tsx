@@ -10,6 +10,7 @@ import HumidityGauge from "./HumidityGauge";
 import LoadingOverlay from "./LoadingOverlay";
 import ReadingsGrid from "./ReadingsGrid";
 import SettingsModal from "./SettingsModal";
+import ExportModal from "./ExportModal";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [importState, setImportState] = useState<{ loading: boolean; ok?: boolean; msg?: string; startedAt?: number } | null>(null);
   const [staleness, setStaleness] = useState<"ok" | "stale" | "offline">("ok");
 
@@ -156,9 +158,9 @@ export default function Dashboard() {
         isStandby={isStandby}
         onPost={post}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenExport={() => setExportOpen(true)}
         importState={importState}
         onImport={importHistory}
-        exportData={{ sernum, vals, ophours, timestamp: lastUpdate ?? new Date() }}
       />
 
       <SettingsModal
@@ -167,6 +169,11 @@ export default function Dashboard() {
         busy={busy}
         sernum={sernum}
         onPost={post}
+      />
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
       />
 
       <AppFooter

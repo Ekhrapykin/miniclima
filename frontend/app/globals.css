@@ -695,6 +695,27 @@ body::after {
   gap: 12px;
 }
 
+/* ── export modal ────────────────────────────────────────────────────────── */
+.export-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.export-option-btn {
+  flex: 1;
+  min-width: 80px;
+  text-align: center;
+  padding: 10px 16px !important;
+}
+.export-option-active {
+  border-color: var(--amb) !important;
+  color: var(--amb) !important;
+  background: var(--amb-dim) !important;
+}
+.export-summary {
+  padding: 8px 0;
+}
+
 /* ── responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .main-grid {
