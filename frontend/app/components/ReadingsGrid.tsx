@@ -6,13 +6,14 @@ interface ReadingsGridProps {
   vals: Vals;
   sernum: Sernum;
   ophours: number | null;
+  deviceOff?: boolean;
 }
 
-export default function ReadingsGrid({ vals, sernum, ophours }: ReadingsGridProps) {
+export default function ReadingsGrid({ vals, sernum, ophours, deviceOff }: ReadingsGridProps) {
   const sign = (n: number) => (n > 0 ? "+" : "");
   const getval = (val: number | null | undefined, uom: string) => val != null ? `${val}${uom}` : "--"
   return (
-    <div className="readings-panel">
+    <div className={`readings-panel${deviceOff ? " readings-off" : ""}`}>
       <Cell label="Setpoint"      value={getval(sernum.sp, '%')} amber />
       <Cell label="Ambient"       value={getval(vals.t, '°C')} />
       <Cell label="Alarm Min"     value={getval(sernum.lo, '%')} dim />

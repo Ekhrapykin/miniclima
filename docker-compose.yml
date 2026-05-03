@@ -10,6 +10,8 @@ services:
       - .env
     environment:
       - CORS_ORIGINS=http://${HOST:-localhost}:${FRONTEND_PORT:-3000}
+    volumes:
+      - api-state:/data
     restart: unless-stopped
     networks:
       - miniclima
@@ -34,6 +36,7 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=365d'
       - '--web.enable-remote-write-receiver'
     restart: unless-stopped
     networks:
@@ -63,5 +66,6 @@ networks:
     driver: bridge
 
 volumes:
+  api-state:
   grafana-storage:
   prometheus-storage:

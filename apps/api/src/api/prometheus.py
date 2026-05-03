@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import snappy
 from fastapi.responses import Response
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
 
 log = logging.getLogger("api")
 
@@ -18,18 +18,29 @@ PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://prometheus:9090") + "/api/v
 CUTOFF_DAYS = os.getenv("CUTOFF_DAYS", "60")
 
 # --- Gauges / Counters ---
-m_humidity    = Gauge("ebc10_humidity_percent",    "Relative humidity reading (%RH)")
-m_temp        = Gauge("ebc10_temperature_celsius", "Temperature (°C)", ["sensor"])
-m_sp          = Gauge("ebc10_setpoint_percent",    "Humidity setpoint (%RH)")
-m_alarm_min   = Gauge("ebc10_humidity_min",         "Alarm low threshold (%RH)")
-m_alarm_max   = Gauge("ebc10_humidity_max",         "Alarm high threshold (%RH)")
-m_ophours     = Gauge("ebc10_operating_hours",     "Operating hours")
-m_running     = Gauge("ebc10_device_running",      "1 if device is running, 0 if standby")
+# Device metrics on a separate registry so we can exclude them when offline
+_device_registry = CollectorRegistry()
+m_humidity    = Gauge("ebc10_humidity_percent",    "Relative humidity reading (%RH)", registry=_device_registry)
+m_temp        = Gauge("ebc10_temperature_celsius", "Temperature (°C)", ["sensor"], registry=_device_registry)
+m_sp          = Gauge("ebc10_setpoint_percent",    "Humidity setpoint (%RH)", registry=_device_registry)
+m_alarm_min   = Gauge("ebc10_humidity_min",         "Alarm low threshold (%RH)", registry=_device_registry)
+m_alarm_max   = Gauge("ebc10_humidity_max",         "Alarm high threshold (%RH)", registry=_device_registry)
+m_ophours     = Gauge("ebc10_operating_hours",     "Operating hours", registry=_device_registry)
+m_running     = Gauge("ebc10_device_running",      "1 if device is running, 0 if standby", registry=_device_registry)
 m_poll_errors = Counter("ebc10_poll_errors_total", "Total number of poll errors")
+
+_device_online = False
+
+
+def set_device_offline():
+    global _device_online
+    _device_online = False
 
 
 def update_live_metrics(data: dict):
     """Update Prometheus gauges from a fresh poll result."""
+    global _device_online
+    _device_online = True
     vals   = data.get("vals", {})
     sernum = data.get("sernum", {})
     if vals.get("rh") is not None:
@@ -52,7 +63,10 @@ def update_live_metrics(data: dict):
 
 
 def metrics_response() -> Response:
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    output = generate_latest()
+    if _device_online:
+        output += generate_latest(_device_registry)
+    return Response(output, media_type=CONTENT_TYPE_LATEST)
 
 
 # --- Minimal protobuf encoder for Prometheus remote write ---

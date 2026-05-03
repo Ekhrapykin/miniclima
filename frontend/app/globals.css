@@ -339,6 +339,8 @@ body::after {
 .status-label.running { color: var(--run); }
 .status-label.standby { color: var(--sby); }
 .status-label.unknown { color: var(--tx-dim); }
+.status-dot.connecting { background: var(--amb); box-shadow: 0 0 8px var(--amb); }
+.status-label.connecting { color: var(--amb); }
 .status-dot.stale   { background: var(--amb); box-shadow: 0 0 8px var(--amb); }
 .status-dot.offline { background: var(--err); box-shadow: 0 0 8px var(--err); }
 .status-label.stale   { color: var(--amb); }
@@ -373,6 +375,9 @@ body::after {
 .gauge-alarm {
   animation: alarm-pulse 1.5s ease-in-out infinite;
   border-right-color: var(--err) !important;
+}
+.gauge-off {
+  opacity: 0.5;
 }
 .gauge-title {
   font-size: 11px;
@@ -434,6 +439,8 @@ body::after {
   gap: 12px;
 }
 .cell-full    { grid-column: 1 / -1; }
+.readings-off .cell-val { color: var(--tx-dim) !important; }
+.readings-off .cell-val.amber { color: var(--tx-dim) !important; }
 .ophours-val  { font-size: 32px !important; font-family: var(--font-mono) !important; }
 
 /* ── filter timer ────────────────────────────────────────────────────────── */
@@ -601,6 +608,33 @@ body::after {
 .grafana-panel {
   flex: 1;
   min-height: 300px;
+}
+.grafana-range-bar {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.grafana-range-btn {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--tx-label);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.grafana-range-btn:hover {
+  color: var(--tx);
+  border-color: var(--border-hi);
+}
+.grafana-range-active {
+  color: var(--amb) !important;
+  border-color: var(--amb) !important;
+  background: var(--amb-dim);
 }
 .grafana-iframe {
   width: 100%;

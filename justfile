@@ -74,6 +74,12 @@ docker-restart: docker-build docker-down docker-up docker-ps
 docker-ps:
     docker compose ps
 
+# Wipe all Prometheus data and restart with a clean database
+prometheus-reset:
+    docker compose down prometheus
+    docker volume rm miniclima_prometheus-storage
+    docker compose up -d prometheus
+
 # Follow logs (optionally pass a service name: just docker-logs api)
 docker-logs service="":
     docker compose logs -f {{service}}

@@ -26,21 +26,22 @@ interface HumidityGaugeProps {
   loading: boolean;
   flag?: string;
   t?: number;
+  deviceOff?: boolean;
 }
 
-export default function HumidityGauge({ rh, sp, lo, hi, loading, flag, t }: HumidityGaugeProps) {
+export default function HumidityGauge({ rh, sp, lo, hi, loading, flag, t, deviceOff }: HumidityGaugeProps) {
   const rhArc = (rh / 100) * ARC;
   const [spX1, spY1] = gaugePoint(sp, 71);
   const [spX2, spY2] = gaugePoint(sp, 93);
   const [spLabelX, spLabelY] = gaugePoint(sp, 60);
 
-  const alarm = !loading && lo != null && hi != null && (rh > hi || rh < lo);
+  const alarm = !loading && !deviceOff && lo != null && hi != null && (rh > hi || rh < lo);
   const alarmHigh = alarm && rh > hi!;
-  const arcColor = alarm ? "var(--err)" : "var(--ph)";
-  const glowFilter = alarm ? "url(#err-glow)" : "url(#ph-glow)";
+  const arcColor = deviceOff ? "var(--tx-dim)" : alarm ? "var(--err)" : "var(--ph)";
+  const glowFilter = deviceOff ? "none" : alarm ? "url(#err-glow)" : "url(#ph-glow)";
 
   return (
-    <div className={`gauge-panel${alarm ? " gauge-alarm" : ""}`}>
+    <div className={`gauge-panel${alarm ? " gauge-alarm" : ""}${deviceOff ? " gauge-off" : ""}`}>
       <span className="gauge-title">Relative Humidity</span>
 
       <svg
@@ -76,7 +77,7 @@ export default function HumidityGauge({ rh, sp, lo, hi, loading, flag, t }: Humi
         <circle
           cx={CX} cy={CY} r={R}
           fill="none"
-          stroke={alarm ? "rgba(255,64,96,0.13)" : "var(--ph-dim)"}
+          stroke={deviceOff ? "var(--border)" : alarm ? "rgba(255,64,96,0.13)" : "var(--ph-dim)"}
           strokeWidth={5}
           strokeLinecap="round"
           strokeDasharray={`${ARC} ${CIRC - ARC}`}
@@ -116,7 +117,7 @@ export default function HumidityGauge({ rh, sp, lo, hi, loading, flag, t }: Humi
         <text
           x={CX} y={CY + 18}
           textAnchor="middle"
-          fill={alarm ? "rgba(255,64,96,0.5)" : "rgba(0,232,162,0.5)"}
+          fill={deviceOff ? "var(--tx-dim)" : alarm ? "rgba(255,64,96,0.5)" : "rgba(0,232,162,0.5)"}
           fontSize={12}
           fontFamily="var(--font-sans)"
           letterSpacing="4"
@@ -161,7 +162,7 @@ export default function HumidityGauge({ rh, sp, lo, hi, loading, flag, t }: Humi
       </div>
 
       <div className="gauge-temp">
-        <span className="gauge-temp-val">{loading ? "--" : (t != null ? `${t}°` : "--")}</span>
+        <span className="gauge-temp-val" style={deviceOff ? { color: "var(--tx-dim)" } : undefined}>{loading ? "--" : (t != null ? `${t}°` : "--")}</span>
         <span className="gauge-temp-label">Ambient</span>
       </div>
     </div>

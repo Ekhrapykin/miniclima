@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-const STORAGE_KEY = "ebc10-filter-changed";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
 const WARN_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -18,17 +18,33 @@ function formatCountdown(ms: number): string {
 
 export default function FilterTimer() {
   const [changedDate, setChangedDate] = useState<Date | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) setChangedDate(new Date(stored));
+    fetch(`${API}/filter-date`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.date) setChangedDate(new Date(d.date));
+        setLoaded(true);
+      })
+      .catch(() => setLoaded(true));
   }, []);
 
-  const handleReset = () => {
+  const handleReset = async () => {
     const now = new Date();
-    localStorage.setItem(STORAGE_KEY, now.toISOString());
-    setChangedDate(now);
+    try {
+      await fetch(`${API}/filter-date`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: now.toISOString() }),
+      });
+      setChangedDate(now);
+    } catch {
+      setChangedDate(now);
+    }
   };
+
+  if (!loaded) return null;
 
   if (!changedDate) {
     return (

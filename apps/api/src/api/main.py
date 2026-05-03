@@ -28,6 +28,7 @@ from pydantic import BaseModel
 import api.connection as conn
 from api.poll import poll_loop
 from api.prometheus import metrics_response, push_records_to_prometheus
+from api.store import load as load_state, get_last_poll, get_last_contact, get_filter_date, set_filter_date
 from ebc10.utils import parse_dump_records
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -40,6 +41,12 @@ log = logging.getLogger("api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.getLogger("ebc10").setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+    load_state()
+    saved = get_last_poll()
+    if saved:
+        saved["device_connected"] = "connecting"
+        saved["last_contact"] = get_last_contact()
+        conn._latest = saved
     conn._lock = asyncio.Lock()
     task = asyncio.create_task(poll_loop())
     yield
@@ -254,6 +261,23 @@ async def set_time(req: SetTimeRequest):
     ok = await _write("set_time", req.time)
     if not ok:
         raise HTTPException(status_code=502, detail="set_time command failed")
+    return {"ok": True}
+
+
+# --- filter date ---
+
+@app.get("/filter-date")
+async def get_filter_date_endpoint():
+    return {"date": get_filter_date()}
+
+
+class FilterDateRequest(BaseModel):
+    date: str
+
+
+@app.post("/filter-date")
+async def set_filter_date_endpoint(req: FilterDateRequest):
+    set_filter_date(req.date)
     return {"ok": True}
 
 

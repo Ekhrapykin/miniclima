@@ -57,8 +57,11 @@ def close_client():
 
 def read_status() -> dict:
     c = ensure_connected()
+    sernum = c.read_sernum()
+    if not sernum.get("serial"):
+        return {"sernum": sernum, "vals": {"raw": "", "state": "unknown"}, "ophours": None}
     return {
-        "sernum":  c.read_sernum(),
+        "sernum":  sernum,
         "vals":    c.read_vals(),
         "ophours": c.read_ophours(),
     }

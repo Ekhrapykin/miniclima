@@ -21,12 +21,15 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [connErr, setConnErr] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [lastDeviceContact, setLastDeviceContact] = useState<Date | null>(null);
+
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ ok: boolean; msg: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [importState, setImportState] = useState<{ loading: boolean; ok?: boolean; msg?: string; startedAt?: number } | null>(null);
   const [staleness, setStaleness] = useState<"ok" | "stale" | "offline">("ok");
+  const [deviceStatus, setDeviceStatus] = useState<true | false | "connecting">("connecting");
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -62,9 +65,14 @@ export default function Dashboard() {
       ws.onmessage = (ev) => {
         try {
           const d = JSON.parse(ev.data);
-          setSernum(d.sernum ?? {});
-          setVals(d.vals ?? {});
-          if (d.ophours != null) setOphours(d.ophours);
+          const ds = d.device_connected === true ? true : d.device_connected === false ? false : "connecting" as const;
+          setDeviceStatus(ds);
+          if (ds === true) {
+            setSernum(d.sernum ?? {});
+            setVals(d.vals ?? {});
+            if (d.ophours != null) setOphours(d.ophours);
+          }
+          if (d.last_contact) setLastDeviceContact(new Date(d.last_contact));
           setLastUpdate(new Date());
           setConnErr(false);
           setStaleness("ok");
@@ -102,10 +110,12 @@ export default function Dashboard() {
     }
   };
 
-  const rh = vals.rh ?? 0;
-  const sp = sernum.sp ?? 50;
   const isRunning = vals.state === "running";
   const isStandby = vals.state === "standby";
+  const deviceOff = !loading && deviceStatus === false;
+  const connecting = !loading && deviceStatus === "connecting";
+  const rh = vals.rh ?? 0;
+  const sp = sernum.sp ?? 50;
 
   const importHistory = async () => {
     setImportState({ loading: true, startedAt: Date.now() });
@@ -142,12 +152,15 @@ export default function Dashboard() {
         serial={sernum.serial}
         staleness={staleness}
         lastUpdate={lastUpdate}
+        lastDeviceContact={lastDeviceContact}
+        deviceOff={deviceOff}
+        connecting={connecting}
       />
 
       <main className="main-grid">
-        <HumidityGauge rh={rh} sp={sp} lo={sernum.lo} hi={sernum.hi} loading={loading} flag={vals.flag} t={vals.t} />
+        <HumidityGauge rh={rh} sp={sp} lo={sernum.lo} hi={sernum.hi} loading={loading} flag={vals.flag} t={vals.t} deviceOff={deviceOff} />
         <div className="right-column">
-          <ReadingsGrid vals={vals} sernum={sernum} ophours={ophours} />
+          <ReadingsGrid vals={vals} sernum={sernum} ophours={ophours} deviceOff={deviceOff} />
           <GrafanaPanel />
         </div>
       </main>
